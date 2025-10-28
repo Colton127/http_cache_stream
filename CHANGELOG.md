@@ -1,3 +1,23 @@
+## 0.0.4
+
+### Added
+- `HttpCacheManager.createLazyStream()` - Creates a lazy-loading cache stream that automatically manages `HttpCacheStream` lifecycle
+  - Streams are created on-demand when first requested
+  - Automatically disposed after `autoDisposeDelay` when no active requests remain
+  - Reduces resource usage for intermittently-accessed URLs
+  - Accepts optional `file`, `config`, and `autoDisposeDelay` parameters
+
+* Breaking: Removed cacheDir and customHttpClient parameters in HttpCacheManager.init(). To specify a custom cache directory and/or http client, provide a GlobalCacheConfig during initalization. (See GlobalCacheConfig.init)
+
+* Improved cache I/O write performance by immediately writing data to file system
+
+* Improved cache download time by buffering data while processing requests.
+
+* Added an optional port parameter to HttpCacheManager.init and HttpCacheManager.createServer to specify the cache server port instead of using a random available port.
+
+* Adjust default minChunkSize to 128KB and rangeRequestSplitThreshold to 5MB for improved cache stream performance and responsiveness.
+
+
 ## 0.0.3
 
 * Add acceptRangesHeader to partial content response headers

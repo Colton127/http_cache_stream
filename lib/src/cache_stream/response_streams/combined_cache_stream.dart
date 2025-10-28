@@ -64,8 +64,8 @@ class CombinedCacheStreamResponse extends StreamResponse {
       _controller.onCancel = null;
       close();
     };
-    _controller.onPause = _currentSubscription.pause;
-    _controller.onResume = _currentSubscription.resume;
+    _controller.onPause = () => _currentSubscription.pause();
+    _controller.onResume = () => _currentSubscription.resume();
   }
 
   void _start() {

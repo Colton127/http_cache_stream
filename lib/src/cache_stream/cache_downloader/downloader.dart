@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:http_cache_stream/http_cache_stream.dart';
 import 'package:http_cache_stream/src/cache_stream/response_streams/download_stream.dart';
 import 'package:http_cache_stream/src/etc/exceptions.dart';
+
+import 'chunked_bytes_buffer.dart';
 
 class Downloader {
   final Uri sourceUrl;
@@ -15,7 +16,7 @@ class Downloader {
     this.sourceUrl,
     this.downloadRange,
     this.streamConfig, {
-    this.timeout = const Duration(seconds: 15),
+    this.timeout = const Duration(seconds: 30),
   });
 
   Future<void> download({
@@ -25,6 +26,21 @@ class Downloader {
         onHeaders,
     required final void Function(List<int> data) onData,
   }) async {
+    assert(_buffer == null, 'Downloader is already downloading');
+
+    final buffer = _buffer = ChunkedBytesBuffer(
+      (List<int> data) {
+        _receivedBytes += data.length;
+        onData(data);
+      },
+      minChunkSize: streamConfig.minChunkSize,
+    );
+    if (_pauseCount > 0) {
+      buffer.pause();
+    }
+
+    bool invalidCacheOccurred = false;
+
     try {
       while (isActive) {
         DownloadStream? downloadStream;
@@ -40,37 +56,44 @@ class Downloader {
                 sourceUrl); //Downloader was closed while waiting for the stream
           }
           onHeaders(downloadStream.cachedResponseHeaders);
-          await _listenResponse(downloadStream, onData);
+          await _listenResponse(downloadStream, buffer);
+        } on InvalidCacheException {
+          invalidCacheOccurred =
+              true; //Clear buffer on invalid cache to avoid sending invalid data
+          rethrow;
         } catch (e) {
           downloadStream?.cancel();
           if (!isActive) {
             break;
-          } else if (e is! InvalidCacheException) {
+          } else {
+            if (!buffer.isPaused) {
+              buffer.flush();
+            }
             onError(e);
             await Future.delayed(Duration(seconds: 5)); //Wait before retrying
-          } else {
-            rethrow;
           }
         }
       }
     } finally {
+      if (invalidCacheOccurred) {
+        buffer.clear(); //Clear buffer if an invalid cache occurred
+      } else {
+        if (buffer.isPaused) {
+          await buffer
+              .onResume; //Wait until resumed before flushing and closing
+        }
+        buffer.flush();
+      }
       close();
     }
   }
 
   Future<void> _listenResponse(
     final Stream<List<int>> response,
-    final void Function(List<int> data) onData,
+    final ChunkedBytesBuffer buffer,
   ) {
     final subscriptionCompleter = _subscriptionCompleter = Completer<void>();
-    final buffer = BytesBuilder(copy: false);
-    final minChunkSize = streamConfig.minChunkSize;
-
-    void emitBuffer() {
-      if (buffer.isEmpty) return;
-      _receivedBytes += buffer.length;
-      onData(buffer.takeBytes());
-    }
+    bool receivedData = false;
 
     void completeError(DownloadException error) {
       if (subscriptionCompleter.isCompleted) return;
@@ -79,50 +102,40 @@ class Downloader {
 
     final subscription = response.listen(
       (data) {
+        receivedData = true;
         buffer.add(data);
-        if (buffer.length > minChunkSize) {
-          emitBuffer();
-        }
       },
       onDone: () {
-        emitBuffer();
         _done = true;
         if (!subscriptionCompleter.isCompleted) {
           subscriptionCompleter.complete();
         }
       },
       onError: (e) {
-        emitBuffer();
         completeError(DownloadException(sourceUrl, e.toString()));
       },
       cancelOnError: true,
     );
-    _currentSubscription = subscription;
-    if (_pauseCount > 0 && !subscription.isPaused) {
-      subscription.pause(); //Pause the subscription if the downloader is paused
-    }
 
-    int lastReceivedBytes = receivedBytes;
     final timeoutTimer = Timer.periodic(timeout, (t) {
-      if (lastReceivedBytes != receivedBytes) {
-        lastReceivedBytes = receivedBytes;
-      } else if (!subscription.isPaused && buffer.isEmpty) {
+      if (receivedData) {
+        receivedData = false;
+      } else if (!subscription.isPaused) {
         t.cancel();
         completeError(DownloadTimedOutException(sourceUrl, timeout));
       }
     });
 
     return subscriptionCompleter.future.whenComplete(() {
-      _currentSubscription = null;
       _subscriptionCompleter = null;
       timeoutTimer.cancel();
       subscription.cancel();
-      emitBuffer();
     });
   }
 
   void close([Object? error]) {
     _closed = true;
+
     final subscriptionCompleter = _subscriptionCompleter;
     if (subscriptionCompleter != null && !subscriptionCompleter.isCompleted) {
       subscriptionCompleter
@@ -130,20 +143,26 @@ class Downloader {
     }
   }
 
-  void pause() {
+  void pause({bool flush = false}) {
+    flush = flush && !isPaused;
     _pauseCount = _pauseCount <= 0 ? 1 : _pauseCount + 1;
-    _currentSubscription?.pause();
+    _buffer?.pause();
+    if (flush) _buffer?.flush();
   }
 
   void resume() {
     _pauseCount--;
-    _currentSubscription?.resume();
+
+    if (_pauseCount <= 0) {
+      _pauseCount = 0;
+      _buffer?.resume();
+    }
   }
 
-  StreamSubscription<List<int>>? _currentSubscription;
   int _receivedBytes = 0;
   bool _done = false;
   Completer<void>? _subscriptionCompleter;
+  ChunkedBytesBuffer? _buffer;
   int _pauseCount = 0;
   bool _closed = false;
 
@@ -164,7 +183,7 @@ class Downloader {
 
   ///If the stream is paused
   bool get isPaused {
-    return _currentSubscription?.isPaused ?? _pauseCount > 0;
+    return _buffer?.isPaused ?? _pauseCount > 0;
   }
 }
 

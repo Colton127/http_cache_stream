@@ -25,7 +25,7 @@ abstract interface class CacheConfiguration {
   /// and a range request's start position before creating a separate download stream.
   /// Set to null to disable separate range downloads.
   ///
-  /// Default is null.
+  /// Default value is 5 MB.
   int? get rangeRequestSplitThreshold;
   set rangeRequestSplitThreshold(int? value);
 
@@ -37,8 +37,8 @@ abstract interface class CacheConfiguration {
 
   /// The preferred minimum size of chunks emitted from the cache download stream.
   /// Network data is buffered until reaching this size before being emitted downstream.
-  /// Larger values improve I/O efficiency at the cost of increased memory usage.
-  /// Default value is 64KB.
+  /// Larger values improve I/O efficiency and performance at the cost of increased memory usage.
+  /// Default value is 128KB.
   int get minChunkSize;
   set minChunkSize(int value);
 

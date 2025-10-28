@@ -1,22 +1,40 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:http_cache_stream/src/cache_server/local_cache_server.dart';
 import 'package:http_cache_stream/src/etc/extensions.dart';
 import 'package:http_cache_stream/src/models/metadata/cache_files.dart';
 
 import '../../http_cache_stream.dart';
 import '../etc/const.dart';
+import '../lazy_cache_stream/lazy_cache_stream_manager.dart';
 
 class HttpCacheManager {
   final LocalCacheServer _server;
   final GlobalCacheConfig config;
   final Map<String, HttpCacheStream> _streams = {};
+  final LazyCacheStreamManager _lazyStreamManager;
   final List<HttpCacheServer> _cacheServers = [];
-  HttpCacheManager._(this._server, this.config) {
+  HttpCacheManager._(this._server, this.config)
+      : _lazyStreamManager = LazyCacheStreamManager(_server.serverUri) {
     _server.start((request) {
+      final lazyStream = _lazyStreamManager.getLazyStream(request.uri);
+      if (lazyStream != null) {
+        final cacheStream = createStream(
+          lazyStream.sourceUrl,
+          file: lazyStream.file,
+          config: lazyStream.config,
+        );
+        request.response.done.onComplete(() {
+          Timer(
+              lazyStream.autoDisposeDelay,
+              () => cacheStream
+                  .dispose()
+                  .ignore()); // Decrease the stream's retainCount for autoDispose
+        });
+        return cacheStream;
+      }
+
       return getExistingStream(request.uri);
     });
   }
@@ -45,35 +63,57 @@ class HttpCacheManager {
       config: config ?? createStreamConfig(),
     );
     final key = sourceUrl.requestKey;
-    cacheStream.future.whenComplete(
+    cacheStream.future.onComplete(
       () => _streams.remove(key),
     ); //Remove when stream is disposed
     _streams[key] = cacheStream; //Add to the stream map
     return cacheStream;
   }
 
-  ///Creates a [HttpCacheServer] instance for a source Uri. This server will redirect requests to the given source and create [HttpCacheStream] instances for each request.
+  /// Returns a [LazyCacheStream] that automatically manages [HttpCacheStream] lifecycle.
+  ///
+  /// A [HttpCacheStream] is created on-demand when the first request is made to the cache URL.
+  /// After all active requests complete, the stream is automatically disposed after [autoDisposeDelay].
+  /// Subsequent requests will create a new stream instance.
+  ///
+  /// Use this when you need a cacheable URL that doesn't keep resources alive when idle.
+  ///
+  /// - [sourceUrl]: The remote URL to cache
+  /// - [autoDisposeDelay]: How long to wait after the last request before disposing
+  /// - [file]: Optional custom file path for the cache
+  /// - [config]: Optional stream configuration
+  LazyCacheStream createLazyStream(
+    final Uri sourceUrl, {
+    final Duration autoDisposeDelay = const Duration(seconds: 15),
+    final File? file,
+    final StreamCacheConfig? config,
+  }) {
+    return _lazyStreamManager.createLazyStream(
+      sourceUrl,
+      autoDisposeDelay: autoDisposeDelay,
+      file: file,
+      config: config,
+    );
+  }
+
+  ///Creates a [HttpCacheServer] instance for an origin Uri. This server will redirect requests to the given origin and create [HttpCacheStream] instances for each request.
   ///[autoDisposeDelay] is the delay before a stream is disposed after all requests are done.
-  ///Optionally, you can provide a [StreamCacheConfig] to be used for the streams created by this server.
-  ///This feature is experimental.
+  ///Optionally, you can provide a [StreamCacheConfig] to be used for the streams created by this server, and a [port] for the local server.
   Future<HttpCacheServer> createServer(
-    final Uri source, {
+    final Uri origin, {
     final Duration autoDisposeDelay = const Duration(seconds: 15),
     final StreamCacheConfig? config,
+    final int? port,
   }) async {
     final cacheServer = HttpCacheServer(
-      Uri(
-        scheme: source.scheme,
-        host: source.host,
-        port: source.port,
-      ),
-      await LocalCacheServer.init(),
+      origin.originUri,
+      await LocalCacheServer.init(port),
       autoDisposeDelay,
       config ?? createStreamConfig(),
       createStream,
     );
     _cacheServers.add(cacheServer);
-    cacheServer.future.whenComplete(() => _cacheServers.remove(cacheServer));
+    cacheServer.future.onComplete(() => _cacheServers.remove(cacheServer));
     return cacheServer;
   }
 
@@ -105,9 +145,6 @@ class HttpCacheManager {
         if (completedCacheFile.existsSync()) {
           continue; //Do not delete metadata if the cache file exists
         }
-      }
-      if (kDebugMode) {
-        print('HttpCacheManager: Deleting cache file: ${file.path}');
       }
       await file.delete();
     }
@@ -160,19 +197,34 @@ class HttpCacheManager {
         _defaultCacheFiles(sourceUrl);
   }
 
+  // /// Returns the existing [HttpCacheStream] for the given URL, or null if it doesn't exist.
+  // /// The input [url] can either be [sourceUrl] or [cacheUrl].
+  // HttpCacheStream? getExistingStream(final Uri url) {
+  //   return _streams[url.requestKey];
+  // }
+
   /// Returns the existing [HttpCacheStream] for the given URL, or null if it doesn't exist.
   /// The input [url] can either be [sourceUrl] or [cacheUrl].
   HttpCacheStream? getExistingStream(final Uri url) {
-    return _streams[url.requestKey];
+    final String key = url.requestKey;
+    final HttpCacheStream? stream = _streams[key];
+
+    if (stream != null && stream.isDisposed) {
+      _streams.remove(key);
+      return null;
+    }
+
+    return stream;
   }
 
   ///Returns the existing [HttpCacheServer] for the given source URL, or null if it doesn't exist.
   HttpCacheServer? getExistingServer(final Uri source) {
     for (final cacheServer in _cacheServers) {
-      final serverSource = cacheServer.source;
-      if (serverSource.host == source.host &&
-          serverSource.port == source.port &&
-          serverSource.scheme == source.scheme) {
+      final cacheServerOrigin = cacheServer.origin;
+      if (cacheServerOrigin.host == source.host &&
+          cacheServerOrigin.port == source.port &&
+          cacheServerOrigin.scheme == source.scheme &&
+          !cacheServer.isDisposed) {
         return cacheServer;
       }
     }
@@ -191,19 +243,23 @@ class HttpCacheManager {
     if (_disposed) return;
     _disposed = true;
     HttpCacheManager._instance = null;
-    HttpCacheManager._initCompleter = null;
-    for (final stream in _streams.values) {
-      stream.dispose(force: true).ignore();
+
+    try {
+      await _server.close();
+    } finally {
+      for (final server in _cacheServers.toList()) {
+        server.dispose().ignore();
+      }
+      for (final stream in _streams.values.toList()) {
+        stream.dispose(force: true).ignore();
+      }
+      _streams.clear();
+      _cacheServers.clear();
+
+      if (config.customHttpClient == null) {
+        config.httpClient.close(); // Close the default http client only
+      }
     }
-    for (final httpCacheServer in _cacheServers) {
-      httpCacheServer.dispose().ignore();
-    }
-    _streams.clear();
-    _cacheServers.clear();
-    if (config.customHttpClient == null) {
-      config.httpClient.close(); // Close the default http client only
-    }
-    return _server.close();
   }
 
   Directory get cacheDir => config.cacheDirectory;
@@ -211,41 +267,26 @@ class HttpCacheManager {
   bool _disposed = false;
   bool get isDisposed => _disposed;
 
-  ///Initializes [HttpCacheManager]. If already initialized, returns the existing instance.
-  ///[cacheDir] is the directory where the cache files will be stored. If null, the default cache directory will be used (see [GlobalCacheConfig.defaultCacheDirectory]).
-  ///[customHttpClient] is the custom http client to use. If null, a default http client will be used.
-  ///You can also provide [GlobalCacheConfig] for the initial configuration.
-  static Future<HttpCacheManager> init({
-    final Directory? cacheDir,
-    final http.Client? customHttpClient,
-    GlobalCacheConfig? config,
-  }) async {
-    assert(config == null || (cacheDir == null && customHttpClient == null),
-        'Cannot set cacheDir or httpClient when config is provided. Set them in the config instead.');
+  ///Initializes [HttpCacheManager]. If already initialized, returns the existing instance. If initialization is already in progress, returns the pending instance future.
+  ///Use [GlobalCacheConfig] to specify the cache directory, http client, and initial cache configuration.
+  ///Use [port] to specify the port for the local cache server, if null, a random available port will be used.
+  static FutureOr<HttpCacheManager> init({
+    final GlobalCacheConfig? config,
+    final int? port,
+  }) {
     if (_instance != null) {
       return instance;
     }
-    if (_initCompleter != null) {
-      return _initCompleter!.future;
-    }
-    _initCompleter = Completer<HttpCacheManager>();
-    try {
-      config ??= GlobalCacheConfig(
-        cacheDirectory:
-            cacheDir ?? await GlobalCacheConfig.defaultCacheDirectory(),
-        customHttpClient: customHttpClient,
-      );
-      final httpCacheServer = await LocalCacheServer.init();
-      final httpCacheManager = HttpCacheManager._(httpCacheServer, config);
-      _instance = httpCacheManager;
-      _initCompleter!.complete(httpCacheManager);
-      return httpCacheManager;
-    } catch (e) {
-      _initCompleter!.completeError(e);
-      rethrow;
-    } finally {
-      _initCompleter = null;
-    }
+    return _initFuture ??= (() async {
+      try {
+        return _instance = HttpCacheManager._(
+          await LocalCacheServer.init(port),
+          config ?? await GlobalCacheConfig.init(),
+        );
+      } finally {
+        _initFuture = null;
+      }
+    })();
   }
 
   static HttpCacheManager get instance {
@@ -257,7 +298,7 @@ class HttpCacheManager {
     return _instance!;
   }
 
-  static Completer<HttpCacheManager>? _initCompleter;
+  static Future<HttpCacheManager>? _initFuture;
   static HttpCacheManager? _instance;
   static bool get isInitialized => _instance != null;
   static HttpCacheManager? get instanceOrNull => _instance;

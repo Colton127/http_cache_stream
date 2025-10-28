@@ -1,8 +1,0 @@
-include: package:flutter_lints/flutter.yaml
-
-linter:
-  rules:
-    - avoid_slow_async_io
-
-# Additional information about this file can be found at
-# https://dart.dev/guides/language/analysis-options

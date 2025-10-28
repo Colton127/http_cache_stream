@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -6,6 +7,8 @@ import 'package:http/http.dart';
 import 'package:http_cache_stream/src/etc/exceptions.dart';
 import 'package:http_cache_stream/src/models/http_range/http_range_response.dart';
 import 'package:mime/mime.dart';
+
+import 'cache_files.dart';
 
 @immutable
 class CachedResponseHeaders {
@@ -174,6 +177,20 @@ class CachedResponseHeaders {
     }
   }
 
+  static CachedResponseHeaders? fromCacheFiles(final CacheFiles cacheFiles) {
+    try {
+      if (cacheFiles.metadata.existsSync()) {
+        final json = jsonDecode(cacheFiles.metadata.readAsStringSync())
+            as Map<String, dynamic>;
+        final headersFromJson = CachedResponseHeaders.fromJson(json['headers']);
+        if (headersFromJson != null) return headersFromJson;
+      }
+      return CachedResponseHeaders.fromFile(cacheFiles.complete);
+    } catch (_) {
+      return null;
+    }
+  }
+
   ///Simulates a [CachedResponseHeaders] object from the given [file].
   ///Returns null if the file does not exist or is empty.
   static CachedResponseHeaders? fromFile(final File file) {
@@ -197,10 +214,10 @@ class CachedResponseHeaders {
     if (json is! Map<String, dynamic>) return null;
     final Map<String, String> headers = {};
     json.forEach((key, value) {
-      if (value is List) {
+      if (value is String) {
+        headers[key] = value;
+      } else if (value is List) {
         headers[key] = value.join(', ');
-      } else if (value != null) {
-        headers[key] = value.toString();
       }
     });
     return CachedResponseHeaders._(headers);

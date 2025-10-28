@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http_cache_stream/http_cache_stream.dart';
 import 'package:http_cache_stream/src/cache_manager/http_request_handler.dart';
+import 'package:http_cache_stream/src/etc/extensions.dart';
 
 class LocalCacheServer {
   final HttpServer _httpServer;
@@ -14,8 +15,9 @@ class LocalCacheServer {
           port: _httpServer.port,
         );
 
-  static Future<LocalCacheServer> init() async {
-    final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+  static Future<LocalCacheServer> init([int? port]) async {
+    final httpServer =
+        await HttpServer.bind(InternetAddress.loopbackIPv4, port ?? 0);
     return LocalCacheServer._(httpServer);
   }
 
@@ -26,14 +28,13 @@ class LocalCacheServer {
         final httpCacheStream =
             request.method == 'GET' ? getCacheStream(request) : null;
         if (httpCacheStream != null) {
-          final requestHandler = RequestHandler(request);
-          requestHandler.stream(httpCacheStream);
+          RequestHandler(request).stream(httpCacheStream);
         } else {
-          request.response.statusCode = HttpStatus.clientClosedRequest;
+          request.response.statusCode = HttpStatus.badRequest;
           request.response.close().ignore();
         }
       },
-      onError: (Object e, StackTrace st) {
+      onError: (Object e) {
         if (kDebugMode) print('HttpCacheStream Proxy server onError: $e');
       },
       cancelOnError: false,
@@ -41,8 +42,7 @@ class LocalCacheServer {
   }
 
   Uri getCacheUrl(Uri sourceUrl) {
-    return sourceUrl.replace(
-        scheme: serverUri.scheme, host: serverUri.host, port: serverUri.port);
+    return sourceUrl.replaceOrigin(serverUri);
   }
 
   Future<void> close() {

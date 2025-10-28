@@ -13,14 +13,8 @@ class CacheMetadata {
   ///Constructs [CacheMetadata] from [CacheFiles] and sourceUrl.
   factory CacheMetadata.construct(
       final CacheFiles cacheFiles, final Uri sourceUrl) {
-    CachedResponseHeaders? headers;
-    if (cacheFiles.metadata.statSync().size > 0) {
-      final json = jsonDecode(cacheFiles.metadata.readAsStringSync())
-          as Map<String, dynamic>;
-      headers = CachedResponseHeaders.fromJson(json['headers']);
-    }
-    headers ??= CachedResponseHeaders.fromFile(cacheFiles.complete);
-    return CacheMetadata._(cacheFiles, sourceUrl, headers: headers);
+    return CacheMetadata._(cacheFiles, sourceUrl,
+        headers: CachedResponseHeaders.fromCacheFiles(cacheFiles));
   }
 
   ///Attempts to load the metadata file for the given [file]. Returns null if the metadata file does not exist.
@@ -81,17 +75,7 @@ class CacheMetadata {
   }
 
   ///Returns true if the cache is complete. Returns false if the cache is incomplete or does not exist.
-  bool get isComplete {
-    final completeCacheSize = cacheFile.statSync().size;
-    if (completeCacheSize > 0) {
-      assert(
-        sourceLength == completeCacheSize,
-        'Complete cache size ($completeCacheSize) does not match source length ($sourceLength)',
-      );
-      return true;
-    }
-    return false;
-  }
+  bool get isComplete => cacheFiles.complete.existsSync();
 
   Future<void> save() {
     return metaDataFile.writeAsString(jsonEncode(toJson()));

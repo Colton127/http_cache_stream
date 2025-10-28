@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:http_cache_stream/src/cache_stream/cache_downloader/cache_downloader.dart';
 import 'package:http_cache_stream/src/cache_stream/cache_downloader/downloader.dart';
+import 'package:http_cache_stream/src/etc/extensions.dart';
 import 'package:http_cache_stream/src/models/config/stream_cache_config.dart';
 import 'package:http_cache_stream/src/models/metadata/cache_files.dart';
 import 'package:http_cache_stream/src/models/metadata/cached_response_headers.dart';
@@ -36,6 +37,8 @@ class HttpCacheStream {
   Future<bool>? _validateCacheFuture;
   double? _lastProgress; //The last progress value emitted by the stream
   Object? _lastError; //The last error emitted by the stream
+  bool _initProgressEmitted =
+      false; //Whether the initial progress value has been emitted
   final _disposeCompleter =
       Completer<void>(); //Completer for the dispose future
   CacheMetadata _cacheMetadata; //The metadata for the cache
@@ -46,38 +49,52 @@ class HttpCacheStream {
     required this.files,
     required this.config,
   }) : _cacheMetadata = CacheMetadata.construct(files, sourceUrl) {
-    final cachedHeaders = metadata.headers;
-    if (cachedHeaders == null || cachedHeaders.sourceLength == null) return;
-    if (_updateCacheProgress() == 1.0 &&
-        config.validateOutdatedCache &&
-        cachedHeaders.shouldRevalidate()) {
-      validateCache(force: true, resetInvalid: true).ignore();
+    if (config.validateOutdatedCache) {
+      validateCache(force: false, resetInvalid: true).ignore();
     }
+    _progressController.onListen = () {
+      _progressController.onListen = null;
+      if (!_initProgressEmitted) _getCacheProgress();
+    };
   }
 
   Future<StreamResponse> request({final int? start, final int? end}) async {
     if (_validateCacheFuture != null) {
       await _validateCacheFuture!;
     }
-    _checkDisposed();
     final range = IntRange.construct(start, end, metadata.sourceLength);
     final completedCacheSize = cacheFile.statSync().size;
     if (completedCacheSize > 0) {
+      _updateProgressStream(1.0);
       return StreamResponse.fromFile(range, cacheFile, completedCacheSize);
     }
+    _checkDisposed();
     if (!isDownloading) {
       download().ignore(); //Start download
     }
-    final streamRequest = StreamRequest.construct(range);
+
     final downloader = _cacheDownloader;
-    if (downloader != null &&
-        downloader.downloadPosition > range.start &&
-        downloader.isActive) {
-      downloader
-          .processRequest(streamRequest); //Process request with the downloader
-    } else {
-      _queuedRequests.add(streamRequest); //Add request to queue
+    if (downloader != null && downloader.isActive) {
+      final downloadPosition = downloader.downloadPosition;
+      if (downloadPosition > 0) {
+        final bytesRemaining = range.start - downloadPosition;
+        if (bytesRemaining <= 0) {
+          final streamRequest = StreamRequest.construct(range);
+          downloader.processRequest(
+              streamRequest); //Process request with the downloader immediately
+          return streamRequest.response;
+        } else if (downloader.acceptRangeRequests) {
+          final rangeThreshold = config.rangeRequestSplitThreshold;
+          if (rangeThreshold != null && bytesRemaining > rangeThreshold) {
+            return StreamResponse.fromDownload(sourceUrl, range,
+                config); //Serve request directly from download
+          }
+        }
+      }
     }
+
+    final streamRequest = StreamRequest.construct(range);
+    _queuedRequests.add(streamRequest); //Add request to queue
     return streamRequest.response;
   }
 
@@ -91,7 +108,7 @@ class HttpCacheStream {
     if (_validateCacheFuture != null) {
       return _validateCacheFuture;
     }
-    if (isDownloading || !cacheFile.existsSync()) {
+    if (isDownloading || _getCacheProgress() != 1.0) {
       return null; //Cache does not exist or is downloading
     }
     final currentHeaders =
@@ -113,7 +130,7 @@ class HttpCacheStream {
       }
     }).whenComplete(() {
       _validateCacheFuture = null;
-      _updateCacheProgress();
+      _getCacheProgress();
     });
     return _validateCacheFuture;
   }
@@ -125,91 +142,103 @@ class HttpCacheStream {
       return _downloadFuture!;
     }
     _checkDisposed();
+
     final downloadCompleter = Completer<File>();
     _downloadFuture = downloadCompleter.future;
 
     bool isComplete() {
       if (downloadCompleter.isCompleted) return true;
-      final completed = _updateCacheProgress() == 1.0;
+      final completed = _getCacheProgress() == 1.0;
       if (completed) {
         downloadCompleter.complete(cacheFile);
       }
       return completed;
     }
 
-    while (isRetained && !isComplete()) {
-      try {
-        final downloader =
-            _cacheDownloader = CacheDownloader.construct(metadata, config);
-        await downloader.download(
-          onPosition: (position) {
-            if (_queuedRequests.isEmpty) return;
-            final rangeThreshold = downloader.acceptRangeRequests
-                ? config.rangeRequestSplitThreshold
-                : null;
-            _queuedRequests.removeWhere((request) {
-              final bytesRemaining = request.start - position;
-              if (bytesRemaining <= 0) {
-                downloader.processRequest(request);
-                return true;
-              } else if (rangeThreshold != null &&
-                  bytesRemaining > rangeThreshold) {
-                request.complete(StreamResponse.fromDownload(
-                    sourceUrl, request.range, config));
-                return true;
+    try {
+      while (isRetained && !isComplete()) {
+        try {
+          final downloader =
+              _cacheDownloader = CacheDownloader.construct(metadata, config);
+          await downloader.download(
+            onPosition: (position) {
+              final int? sourceLength = downloader.sourceLength;
+
+              if (sourceLength == null || sourceLength <= 0) {
+                _updateProgressStream(null);
               } else {
-                return false;
+                final progress =
+                    ((position / sourceLength * 100).round() / 100);
+                if (progress >= 0.99) {
+                  _updateProgressStream(
+                      0.99); //Avoid setting progress to 1.0 before completion
+                  return; //If near completion, avoid processing requests using partial data.
+                }
+                _updateProgressStream(progress);
               }
-            });
-          },
-          onComplete: () async {
-            final cachedHeaders = metadata.headers!;
-            if (cachedHeaders.sourceLength != downloader.downloadPosition ||
-                !cachedHeaders.acceptsRangeRequests) {
-              _setCachedResponseHeaders(
-                  cachedHeaders.setSourceLength(downloader.downloadPosition));
-            }
-            await files.partial.rename(files.complete.path);
-            config.onCacheComplete(this, files.complete);
-            if (!config.saveMetadata && files.metadata.existsSync()) {
-              files.metadata.delete().ignore();
-            }
-          },
-          onProgress: (percentage) {
-            //Limit to 99% to prevent 100% progress before write is complete
-            final progress = percentage == null
-                ? null
-                : (percentage / 100).clamp(0, .99).toDouble();
-            _updateProgressStream(progress);
-          },
-          onHeaders: (cacheHttpHeaders) {
-            _setCachedResponseHeaders(cacheHttpHeaders);
-          },
-          onError: (e) {
+
+              if (_queuedRequests.isEmpty) return;
+
+              final rangeThreshold = downloader.acceptRangeRequests
+                  ? config.rangeRequestSplitThreshold
+                  : null;
+              _queuedRequests.removeWhere((request) {
+                final bytesRemaining = request.start - position;
+                if (bytesRemaining <= 0) {
+                  downloader.processRequest(request);
+                  return true;
+                } else if (rangeThreshold != null &&
+                    bytesRemaining > rangeThreshold) {
+                  request.complete(StreamResponse.fromDownload(
+                      sourceUrl, request.range, config));
+                  return true;
+                } else {
+                  return false;
+                }
+              });
+            },
+            onComplete: () async {
+              await files.partial.rename(files.complete.path);
+              config.onCacheComplete(this, files.complete);
+              final cachedHeaders = metadata.headers!;
+              if (cachedHeaders.sourceLength != downloader.downloadPosition ||
+                  !cachedHeaders.acceptsRangeRequests) {
+                _setCachedResponseHeaders(
+                    cachedHeaders.setSourceLength(downloader.downloadPosition));
+              }
+            },
+            onHeaders: (cacheHttpHeaders) {
+              _setCachedResponseHeaders(cacheHttpHeaders);
+            },
+            onError: (e) {
+              _addError(e, closeRequests: true);
+            },
+          );
+        } catch (e) {
+          _cacheDownloader = null;
+          if (e is InvalidCacheException) {
+            await resetCache(e);
+          } else if (isRetained) {
             _addError(e, closeRequests: true);
-          },
-        );
-      } catch (e) {
-        _cacheDownloader = null;
-        if (e is InvalidCacheException) {
-          await resetCache(e);
-        } else if (isRetained) {
-          _addError(e, closeRequests: true);
-          await Future.delayed(const Duration(seconds: 5));
+            await Future.delayed(const Duration(seconds: 5));
+          }
         }
       }
+    } finally {
+      _cacheDownloader = null;
+      _downloadFuture = null;
+
+      if (!isComplete()) {
+        final error = isRetained
+            ? DownloadStoppedException(sourceUrl)
+            : CacheStreamDisposedException(sourceUrl);
+        downloadCompleter.future
+            .ignore(); // Prevent unhandled error during completion
+        downloadCompleter.completeError(error);
+        _addError(error, closeRequests: true);
+      }
     }
-    _cacheDownloader = null;
-    _downloadFuture = null;
-    if (!isComplete()) {
-      final error = isRetained
-          ? DownloadStoppedException(sourceUrl)
-          : CacheStreamDisposedException(sourceUrl);
-      downloadCompleter.future
-          .ignore(); // Prevent unhandled error during completion
-      downloadCompleter.completeError(error);
-      _addError(error, closeRequests: true);
-    }
+
     return downloadCompleter.future;
   }
 
@@ -218,6 +247,7 @@ class HttpCacheStream {
   ///Returns a future that completes when the stream is disposed.
   Future<void> dispose({final bool force = false}) async {
     if (isDisposed) return;
+
     if (!force && _retainCount > 1) {
       _retainCount--;
     } else {
@@ -228,16 +258,25 @@ class HttpCacheStream {
       }
       final downloader = _cacheDownloader;
       if (downloader != null) {
-        await downloader.cancel(error); //Allow downloader to complete cleanly
+        await downloader
+            .cancel(error)
+            .ignoreError(); //Allow downloader to complete cleanly
       }
+
       if (!_disposeCompleter.isCompleted && !isRetained) {
         _disposeCompleter.complete();
         _progressController.close().ignore();
         if (!config.savePartialCache) {
           files.delete(partialOnly: true).ignore();
         }
+        if (!config.saveMetadata &&
+            files.metadata.existsSync() &&
+            cacheFile.existsSync()) {
+          files.metadata.delete().ignore();
+        }
       }
     }
+
     return _disposeCompleter.future;
   }
 
@@ -290,14 +329,16 @@ class HttpCacheStream {
     });
   }
 
-  double? _updateCacheProgress() {
+  double? _getCacheProgress() {
     final cacheProgress = metadata.cacheProgress();
     _updateProgressStream(cacheProgress);
     return cacheProgress;
   }
 
   void _updateProgressStream(final double? progress) {
-    if (progress == 1.0) {
+    _initProgressEmitted = true;
+
+    if (progress == 1.0 && _queuedRequests.isNotEmpty) {
       _queuedRequests.removeWhere((request) {
         request.complete(
           StreamResponse.fromFile(
@@ -309,6 +350,7 @@ class HttpCacheStream {
         return true;
       });
     }
+
     if (progress != _lastProgress) {
       _lastProgress = progress;
       if (_progressController.hasListener && !_progressController.isClosed) {
@@ -318,15 +360,15 @@ class HttpCacheStream {
   }
 
   void _addError(final Object error, {final bool closeRequests = true}) {
+    _lastError = error;
+    if (_progressController.hasListener && !_progressController.isClosed) {
+      _progressController.addError(error);
+    }
     if (closeRequests) {
       _queuedRequests.removeWhere((request) {
         request.completeError(error);
         return true;
       });
-    }
-    _lastError = error;
-    if (_progressController.hasListener && !_progressController.isClosed) {
-      _progressController.addError(error);
     }
   }
 
@@ -336,12 +378,19 @@ class HttpCacheStream {
     }
   }
 
+  ///Retains this [HttpCacheStream] instance, increasing [retainCount] by 1. This method is automatically called when the stream is obtained using [HttpCacheManager.createStream].
+  ///The stream will not be disposed until the [dispose] method is called the same number of times as this method.
+  void retain() {
+    _checkDisposed();
+    _retainCount = _retainCount <= 0 ? 1 : _retainCount + 1;
+  }
+
   ///Returns a stream of download progress 0-1, rounded to 2 decimal places, and any errors that occur.
   ///Returns null if the source length is unknown. Returns 1.0 only if the cache file exists.
   Stream<double?> get progressStream => _progressController.stream;
 
   ///Returns true if the cache file exists.
-  bool get isCached => cacheFile.statSync().size > 0;
+  bool get isCached => cacheFile.existsSync();
 
   ///If this [HttpCacheStream] has been disposed. A disposed stream cannot be used.
   bool get isDisposed => _disposeCompleter.isCompleted;
@@ -356,7 +405,10 @@ class HttpCacheStream {
   int get retainCount => _retainCount;
 
   ///The latest download progress 0-1, rounded to 2 decimal places. Returns null if the source length is unknown. Returns 1.0 only if the cache file exists.
-  double? get progress => _lastProgress;
+  double? get progress {
+    if (!_initProgressEmitted) _getCacheProgress();
+    return _lastProgress;
+  }
 
   ///Returns the last emitted error, or null if error events haven't yet been emitted.
   Object? get lastErrorOrNull => _lastError;
@@ -366,13 +418,6 @@ class HttpCacheStream {
 
   ///The output cache file for this [HttpCacheStream]. This is the file that will be used to save the downloaded content.
   File get cacheFile => files.complete;
-
-  ///Retains this [HttpCacheStream] instance. This method is automatically called when the stream is obtained using [HttpCacheManager.createStream].
-  ///The stream will not be disposed until the [dispose] method is called the same number of times as this method.
-  void retain() {
-    _checkDisposed();
-    _retainCount = _retainCount <= 0 ? 1 : _retainCount + 1;
-  }
 
   ///Returns a future that completes when this [HttpCacheStream] is disposed.
   Future get future => _disposeCompleter.future;

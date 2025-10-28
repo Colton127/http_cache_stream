@@ -16,8 +16,13 @@ class StreamRequest {
     assert(!_responseCompleter.isCompleted, 'Response already completed');
     if (!_responseCompleter.isCompleted) {
       _responseCompleter.complete(response);
-    } else if (response is StreamResponse) {
-      response.close();
+    } else {
+      switch (response) {
+        case StreamResponse():
+          response.close();
+        case Future<StreamResponse>():
+          response.then((value) => value.close()).ignore();
+      }
     }
   }
 

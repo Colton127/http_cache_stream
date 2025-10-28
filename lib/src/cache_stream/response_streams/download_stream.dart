@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart';
 import 'package:http_cache_stream/http_cache_stream.dart';
 import 'package:http_cache_stream/src/etc/exceptions.dart';
@@ -37,17 +36,7 @@ class DownloadStreamResponse extends StreamResponse {
 
 class DownloadStream extends Stream<List<int>> {
   final StreamedResponse _streamedResponse;
-  final Duration autoCancelDelay;
-  DownloadStream(this._streamedResponse,
-      {this.autoCancelDelay = const Duration(seconds: 30)}) {
-    _autoCancelTimer = Timer(autoCancelDelay, () {
-      assert(
-        _listened,
-        'HttpResponseStream was not listened to before auto-canceling.',
-      );
-      cancel();
-    });
-  }
+  DownloadStream(this._streamedResponse);
 
   static Future<DownloadStream> open(
     final Uri url,
@@ -74,7 +63,7 @@ class DownloadStream extends Stream<List<int>> {
             url, rangeRequest, downloadStream.responseRange);
       }
       return downloadStream;
-    } catch (e) {
+    } catch (_) {
       downloadStream?.cancel();
       rethrow;
     }
@@ -88,7 +77,6 @@ class DownloadStream extends Stream<List<int>> {
     bool? cancelOnError,
   }) {
     _listened = true;
-    _autoCancelTimer.cancel();
     return _streamedResponse.stream.listen(
       onData,
       onError: onError,
@@ -103,14 +91,11 @@ class DownloadStream extends Stream<List<int>> {
     try {
       final listener = listen(null, onError: (_) {}, cancelOnError: true);
       await listener.cancel();
-    } catch (e) {
-      if (kDebugMode) print('Error cancelling stream: $e');
-    }
+    } catch (_) {}
   }
 
   bool _listened = false;
   bool get hasListener => _listened;
-  late final Timer _autoCancelTimer;
   BaseResponse get baseResponse => _streamedResponse;
 
   HttpRangeResponse? get responseRange {

@@ -20,7 +20,8 @@ class RequestHandler {
       httpRequest.response.bufferOutput = false;
       httpRequest.response.statusCode = HttpStatus
           .internalServerError; //Set default status code to 500, in case of error
-      await httpRequest.response.done.catchError((_) {});
+      await httpRequest.response.done;
+    } catch (_) {
     } finally {
       _closed = true;
     }
@@ -66,6 +67,7 @@ class RequestHandler {
   ) {
     final httpResponse = httpRequest.response;
     httpResponse.headers.clear();
+
     String? cachedContentType;
     int? sourceLength = streamResponse.sourceLength;
     if (cacheHeaders != null) {
