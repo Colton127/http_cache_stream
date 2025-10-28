@@ -66,10 +66,10 @@ class Downloader {
           if (!isActive) {
             break;
           } else {
+            onError(e);
             if (!buffer.isPaused) {
               buffer.flush();
             }
-            onError(e);
             await Future.delayed(Duration(seconds: 5)); //Wait before retrying
           }
         }
@@ -146,14 +146,17 @@ class Downloader {
   void pause({bool flush = false}) {
     flush = flush && !isPaused;
     _pauseCount = _pauseCount <= 0 ? 1 : _pauseCount + 1;
-    _buffer?.pause();
-    if (flush) _buffer?.flush();
+    final buffer = _buffer;
+    if (buffer != null) {
+      buffer.pause();
+      if (flush) buffer.flush();
+    }
   }
 
   void resume() {
-    _pauseCount--;
-
-    if (_pauseCount <= 0) {
+    if (_pauseCount > 1) {
+      _pauseCount--;
+    } else {
       _pauseCount = 0;
       _buffer?.resume();
     }

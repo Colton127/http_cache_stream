@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:http_cache_stream/http_cache_stream.dart';
 import 'package:http_cache_stream_example/examples/audio_players.dart';
-import 'package:http_cache_stream_example/examples/hls_video.dart';
+import 'package:http_cache_stream_example/examples/hls_video_cache_server.dart';
 import 'package:http_cache_stream_example/examples/just_audio.dart';
 import 'package:http_cache_stream_example/examples/pre_cache_url.dart';
 import 'package:http_cache_stream_example/examples/video_player.dart';
+
+import 'examples/hls_video_lazy_cache_stream.dart';
 
 void main() {
   runApp(const MyApp());
@@ -82,8 +84,14 @@ class _Body extends StatelessWidget {
           ),
         ),
         _BuildButton(
-          'HLS Video',
-          HLSVideoExample(
+          'HLS Video - CacheServer',
+          HLSVideoCacheServerExample(
+            Uri.parse('https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'),
+          ),
+        ),
+        _BuildButton(
+          'HLS Video - LazyCacheStream',
+          HLSVideoLazyCacheStreamExample(
             Uri.parse('https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'),
           ),
         ),

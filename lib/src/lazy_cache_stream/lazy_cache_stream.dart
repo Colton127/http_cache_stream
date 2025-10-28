@@ -6,25 +6,36 @@ class LazyCacheStream {
   final Uri sourceUrl;
   final Uri cacheUrl;
   final File? file;
-  final Duration autoDisposeDelay;
-  final StreamCacheConfig? config;
+  final StreamCacheConfig config;
+
+  ///Unique key for this lazy cache stream, used in headers and query parameters.
+  final String key;
 
   const LazyCacheStream({
+    required this.key,
     required this.sourceUrl,
     required this.cacheUrl,
-    required this.autoDisposeDelay,
     required this.file,
     required this.config,
-  }) : assert(autoDisposeDelay >= Duration.zero,
-            'autoDisposeDelay must be non-negative');
+  });
+
+  static const String headerName = 'x-lazy-cache-stream';
+
+  ///Request header that can be used in making cache requests. This enables support for redirects and dynamic URLs (e.g., m3u8 playlists).
+  ///Note that when using this header, the [file] parameter must be null, as the same file cannot be reused for different requests.
+  Map<String, String> get requestHeader {
+    assert(file == null,
+        'Cache file must be null when using cacheRequestHeader, because the same file cannot be reused for different requests.');
+    return Map.unmodifiable({headerName: key});
+  }
 
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
     return other is LazyCacheStream &&
+        other.key == key &&
         other.sourceUrl == sourceUrl &&
         other.cacheUrl == cacheUrl &&
-        other.autoDisposeDelay == autoDisposeDelay &&
         other.file?.path == file?.path &&
         other.config == config;
   }
@@ -33,7 +44,7 @@ class LazyCacheStream {
   int get hashCode =>
       sourceUrl.hashCode ^
       cacheUrl.hashCode ^
-      autoDisposeDelay.hashCode ^
       file.hashCode ^
-      config.hashCode;
+      config.hashCode ^
+      key.hashCode;
 }

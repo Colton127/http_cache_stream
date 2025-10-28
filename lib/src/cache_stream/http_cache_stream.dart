@@ -4,8 +4,8 @@ import 'dart:io';
 import 'package:http_cache_stream/src/cache_stream/cache_downloader/cache_downloader.dart';
 import 'package:http_cache_stream/src/cache_stream/cache_downloader/downloader.dart';
 import 'package:http_cache_stream/src/etc/extensions.dart';
+import 'package:http_cache_stream/src/models/cache_files/cache_files.dart';
 import 'package:http_cache_stream/src/models/config/stream_cache_config.dart';
-import 'package:http_cache_stream/src/models/metadata/cache_files.dart';
 import 'package:http_cache_stream/src/models/metadata/cached_response_headers.dart';
 import 'package:http_cache_stream/src/models/stream_response/int_range.dart';
 
@@ -52,10 +52,6 @@ class HttpCacheStream {
     if (config.validateOutdatedCache) {
       validateCache(force: false, resetInvalid: true).ignore();
     }
-    _progressController.onListen = () {
-      _progressController.onListen = null;
-      if (!_initProgressEmitted) _getCacheProgress();
-    };
   }
 
   Future<StreamResponse> request({final int? start, final int? end}) async {
@@ -69,12 +65,11 @@ class HttpCacheStream {
       return StreamResponse.fromFile(range, cacheFile, completedCacheSize);
     }
     _checkDisposed();
-    if (!isDownloading) {
-      download().ignore(); //Start download
-    }
 
     final downloader = _cacheDownloader;
-    if (downloader != null && downloader.isActive) {
+    if (downloader == null) {
+      download().ignore(); //Start download
+    } else if (downloader.isActive) {
       final downloadPosition = downloader.downloadPosition;
       if (downloadPosition > 0) {
         final bytesRemaining = range.start - downloadPosition;
@@ -387,7 +382,10 @@ class HttpCacheStream {
 
   ///Returns a stream of download progress 0-1, rounded to 2 decimal places, and any errors that occur.
   ///Returns null if the source length is unknown. Returns 1.0 only if the cache file exists.
-  Stream<double?> get progressStream => _progressController.stream;
+  Stream<double?> get progressStream {
+    if (!_initProgressEmitted) _getCacheProgress();
+    return _progressController.stream;
+  }
 
   ///Returns true if the cache file exists.
   bool get isCached => cacheFile.existsSync();

@@ -8,14 +8,13 @@ import '../../http_cache_stream.dart';
 class HttpCacheServer {
   final Uri origin;
   final LocalCacheServer _localCacheServer;
-  final Duration autoDisposeDelay;
 
   /// The configuration for each generated stream.
   final StreamCacheConfig config;
   final HttpCacheStream Function(Uri sourceUrl, {StreamCacheConfig config})
       _createCacheStream;
-  HttpCacheServer(this.origin, this._localCacheServer, this.autoDisposeDelay,
-      this.config, this._createCacheStream) {
+  HttpCacheServer(this.origin, this._localCacheServer, this.config,
+      this._createCacheStream) {
     _localCacheServer.start((request) {
       final sourceUrl = getSourceUrl(request.uri);
       final cacheStream = _createCacheStream(sourceUrl, config: config);
@@ -26,7 +25,7 @@ class HttpCacheServer {
               .ignore(); // Decrease retainCount immediately if the server is disposed
         } else {
           Timer(
-              autoDisposeDelay,
+              cacheStream.config.autoDisposeDelay,
               () => cacheStream
                   .dispose()
                   .ignore()); // Decrease the stream's retainCount for autoDispose

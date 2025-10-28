@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
-import 'package:http_cache_stream/src/etc/const.dart';
+import 'package:http_cache_stream/src/models/cache_files/cache_file_type.dart';
 import 'package:path/path.dart' as p;
 
 class CacheFiles {

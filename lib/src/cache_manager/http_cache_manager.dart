@@ -3,11 +3,11 @@ import 'dart:io';
 
 import 'package:http_cache_stream/src/cache_server/local_cache_server.dart';
 import 'package:http_cache_stream/src/etc/extensions.dart';
-import 'package:http_cache_stream/src/models/metadata/cache_files.dart';
+import 'package:http_cache_stream/src/models/cache_files/cache_files.dart';
 
 import '../../http_cache_stream.dart';
-import '../etc/const.dart';
 import '../lazy_cache_stream/lazy_cache_stream_manager.dart';
+import '../models/cache_files/cache_file_type.dart';
 
 class HttpCacheManager {
   final LocalCacheServer _server;
@@ -18,7 +18,7 @@ class HttpCacheManager {
   HttpCacheManager._(this._server, this.config)
       : _lazyStreamManager = LazyCacheStreamManager(_server.serverUri) {
     _server.start((request) {
-      final lazyStream = _lazyStreamManager.getLazyStream(request.uri);
+      final lazyStream = _lazyStreamManager.getLazyStream(request);
       if (lazyStream != null) {
         final cacheStream = createStream(
           lazyStream.sourceUrl,
@@ -27,7 +27,7 @@ class HttpCacheManager {
         );
         request.response.done.onComplete(() {
           Timer(
-              lazyStream.autoDisposeDelay,
+              cacheStream.config.autoDisposeDelay,
               () => cacheStream
                   .dispose()
                   .ignore()); // Decrease the stream's retainCount for autoDispose
@@ -73,42 +73,38 @@ class HttpCacheManager {
   /// Returns a [LazyCacheStream] that automatically manages [HttpCacheStream] lifecycle.
   ///
   /// A [HttpCacheStream] is created on-demand when the first request is made to the cache URL.
-  /// After all active requests complete, the stream is automatically disposed after [autoDisposeDelay].
+  /// After all active requests complete, the stream is automatically disposed after [StreamCacheConfig.autoDisposeDelay].
   /// Subsequent requests will create a new stream instance.
   ///
   /// Use this when you need a cacheable URL that doesn't keep resources alive when idle.
   ///
   /// - [sourceUrl]: The remote URL to cache
-  /// - [autoDisposeDelay]: How long to wait after the last request before disposing
   /// - [file]: Optional custom file path for the cache
-  /// - [config]: Optional stream configuration
+  /// - [config]: Optional stream configuration, including autoDispose settings
   LazyCacheStream createLazyStream(
     final Uri sourceUrl, {
-    final Duration autoDisposeDelay = const Duration(seconds: 15),
     final File? file,
     final StreamCacheConfig? config,
   }) {
     return _lazyStreamManager.createLazyStream(
-      sourceUrl,
-      autoDisposeDelay: autoDisposeDelay,
+      sourceUrl: sourceUrl,
       file: file,
       config: config,
     );
   }
 
   ///Creates a [HttpCacheServer] instance for an origin Uri. This server will redirect requests to the given origin and create [HttpCacheStream] instances for each request.
-  ///[autoDisposeDelay] is the delay before a stream is disposed after all requests are done.
+  ///Generally, only one server per origin is needed.
+  ///After all active requests on a created [HttpCacheStream] complete, the stream is automatically disposed after [StreamCacheConfig.autoDisposeDelay].
   ///Optionally, you can provide a [StreamCacheConfig] to be used for the streams created by this server, and a [port] for the local server.
   Future<HttpCacheServer> createServer(
     final Uri origin, {
-    final Duration autoDisposeDelay = const Duration(seconds: 15),
     final StreamCacheConfig? config,
     final int? port,
   }) async {
     final cacheServer = HttpCacheServer(
       origin.originUri,
       await LocalCacheServer.init(port),
-      autoDisposeDelay,
       config ?? createStreamConfig(),
       createStream,
     );
@@ -197,12 +193,6 @@ class HttpCacheManager {
         _defaultCacheFiles(sourceUrl);
   }
 
-  // /// Returns the existing [HttpCacheStream] for the given URL, or null if it doesn't exist.
-  // /// The input [url] can either be [sourceUrl] or [cacheUrl].
-  // HttpCacheStream? getExistingStream(final Uri url) {
-  //   return _streams[url.requestKey];
-  // }
-
   /// Returns the existing [HttpCacheStream] for the given URL, or null if it doesn't exist.
   /// The input [url] can either be [sourceUrl] or [cacheUrl].
   HttpCacheStream? getExistingStream(final Uri url) {
@@ -231,8 +221,13 @@ class HttpCacheManager {
     return null;
   }
 
-  CacheFiles _defaultCacheFiles(Uri sourceUrl) {
-    return CacheFiles.fromUrl(config.cacheDirectory, sourceUrl);
+  CacheFiles _defaultCacheFiles(final Uri sourceUrl) {
+    final resolvedCacheFile = config.cacheFileResolver?.call(sourceUrl);
+    if (resolvedCacheFile != null) {
+      return CacheFiles.fromFile(resolvedCacheFile);
+    } else {
+      return CacheFiles.fromUrl(config.cacheDirectory, sourceUrl);
+    }
   }
 
   ///Create a [StreamCacheConfig] that inherits the current [GlobalCacheConfig]. This config is used to create [HttpCacheStream] instances.

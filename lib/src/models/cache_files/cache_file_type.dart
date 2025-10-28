@@ -35,6 +35,7 @@ enum CacheFileType {
   static File completeFile(File file) {
     final inputType = parse(file);
     if (inputType == CacheFileType.complete) return file;
-    return File(file.path.replaceFirst(inputType.extension, ''));
+    return File(
+        file.path.substring(0, file.path.length - inputType.extension.length));
   }
 }

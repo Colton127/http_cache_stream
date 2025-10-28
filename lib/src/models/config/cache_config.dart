@@ -57,6 +57,11 @@ abstract interface class CacheConfiguration {
   bool get saveMetadata;
   set saveMetadata(bool value);
 
+  /// The delay to wait after the last active client request before disposing a cache stream.
+  /// Applies only to cache streams created automatically by the manager/server (for example: lazy streams produced by [LazyCacheStream] or [HttpCacheServer]).
+  Duration get autoDisposeDelay;
+  set autoDisposeDelay(Duration value);
+
   static int? validateRangeRequestSplitThreshold(int? value) {
     if (value == null) return null;
     return RangeError.checkNotNegative(value, 'RangeRequestSplitThreshold');

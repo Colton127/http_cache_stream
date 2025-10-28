@@ -15,6 +15,11 @@ class StreamCacheConfig implements CacheConfiguration {
     return StreamCacheConfig(cacheManager.config);
   }
 
+  ///Constructs a [StreamCacheConfig] using the global configuration from the singleton [HttpCacheManager.instance].
+  ///[HttpCacheManager] must be initialized before calling this method.
+  factory StreamCacheConfig.init() =>
+      StreamCacheConfig.construct(HttpCacheManager.instance);
+
   ///When true, custom request and response headers set in [HttpCacheManager] are used.
   ///If headers are set for this [HttpCacheStream], they are combined with the global headers, overriding any duplicates.
   bool useGlobalHeaders = true;
@@ -70,6 +75,16 @@ class StreamCacheConfig implements CacheConfiguration {
   @override
   int get minChunkSize {
     return _minChunkSize ?? _global.minChunkSize;
+  }
+
+  @override
+  Duration get autoDisposeDelay {
+    return _autoDisposeDelay ?? _global.autoDisposeDelay;
+  }
+
+  @override
+  set autoDisposeDelay(Duration value) {
+    _autoDisposeDelay = value;
   }
 
   @override
@@ -162,6 +177,7 @@ class StreamCacheConfig implements CacheConfiguration {
   int? _maxBufferSize;
   int? _minChunkSize;
   int? _rangeRequestSplitThreshold;
+  Duration? _autoDisposeDelay;
   Map<String, String>? _requestHeaders;
   Map<String, String>? _responseHeaders;
 }

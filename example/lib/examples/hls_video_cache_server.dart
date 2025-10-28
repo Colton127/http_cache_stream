@@ -1,18 +1,20 @@
-// This is a simple example of how to use the http_cache_stream package with a HLS video.
+// This is a simple example of how to use the http_cache_stream package with a HLS video using HttpCacheServer.
 
 import 'package:flutter/material.dart';
 import 'package:http_cache_stream/http_cache_stream.dart';
 import 'package:video_player/video_player.dart';
 
-class HLSVideoExample extends StatefulWidget {
+class HLSVideoCacheServerExample extends StatefulWidget {
   final Uri sourceUrl;
-  const HLSVideoExample(this.sourceUrl, {super.key});
+  const HLSVideoCacheServerExample(this.sourceUrl, {super.key});
 
   @override
-  State<HLSVideoExample> createState() => _VideoPlayerExampleState();
+  State<HLSVideoCacheServerExample> createState() =>
+      _HLSVideoCacheServerExampleState();
 }
 
-class _VideoPlayerExampleState extends State<HLSVideoExample> {
+class _HLSVideoCacheServerExampleState
+    extends State<HLSVideoCacheServerExample> {
   VideoPlayerController? _controller;
   HttpCacheServer? _cacheServer;
 

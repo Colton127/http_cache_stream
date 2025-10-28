@@ -12,9 +12,8 @@ class LazyCacheStreamManager {
   LazyCacheStreamManager(this.serverUri);
   final Map<String, LazyCacheStream> _streams = {};
 
-  LazyCacheStream createLazyStream(
-    final Uri sourceUrl, {
-    required final Duration autoDisposeDelay,
+  LazyCacheStream createLazyStream({
+    required final Uri sourceUrl,
     final File? file,
     final StreamCacheConfig? config,
   }) {
@@ -31,18 +30,49 @@ class LazyCacheStreamManager {
       );
 
       return LazyCacheStream(
+        key: key,
         sourceUrl: sourceUrl,
         cacheUrl: lazyCacheUrl,
-        autoDisposeDelay: autoDisposeDelay,
         file: file,
-        config: config,
+        config: config ?? StreamCacheConfig.init(),
       );
     });
   }
 
-  LazyCacheStream? getLazyStream(final Uri requestUri) {
+  LazyCacheStream? getLazyStream(final HttpRequest request) {
     if (_streams.isEmpty) return null;
-    return _streams[requestUri.queryParameters[_lazyStreamQueryKey]];
+
+    final Uri requestedUri = request.requestedUri;
+    final Map<String, String> requestQueryParms = requestedUri.queryParameters;
+
+    final LazyCacheStream? lazyCacheStream =
+        _streams[requestQueryParms[_lazyStreamQueryKey]] ??
+            _streams[request.headers.value(LazyCacheStream.headerName)];
+    if (lazyCacheStream == null) return null;
+
+    if (requestedUri.requestKey == lazyCacheStream.cacheUrl.requestKey) {
+      return lazyCacheStream; //Direct match based on request key
+    } else {
+      ///The request differs from the original source URL, we must rewrite the sourceUrl to match the requested URI
+
+      Map<String, String>? updatedQueryParameters;
+      if (requestQueryParms.containsKey(_lazyStreamQueryKey)) {
+        updatedQueryParameters = {...requestQueryParms}..remove(
+            _lazyStreamQueryKey); //Remove lazy stream key from query parameters
+      }
+
+      return LazyCacheStream(
+        sourceUrl: requestedUri.replaceOrigin(
+          lazyCacheStream.sourceUrl,
+          queryParameters: updatedQueryParameters,
+        ),
+        cacheUrl: requestedUri,
+        file:
+            null, //When rewriting the sourceUrl, the same file cannot be reused
+        key: lazyCacheStream.key, //Preserve the key
+        config: lazyCacheStream.config, //Reuse the config for consistency
+      );
+    }
   }
 
   static const String _lazyStreamQueryKey = 'lstream';

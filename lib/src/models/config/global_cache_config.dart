@@ -23,7 +23,9 @@ class GlobalCacheConfig implements CacheConfiguration {
     this.validateOutdatedCache = DefaultCacheConfig.validateOutdatedCache,
     this.savePartialCache = DefaultCacheConfig.savePartialCache,
     this.saveMetadata = DefaultCacheConfig.saveMetadata,
+    this.autoDisposeDelay = DefaultCacheConfig.autoDisposeDelay,
     this.onCacheDone,
+    this.cacheFileResolver,
   })  : httpClient = customHttpClient ?? Client(),
         requestHeaders = requestHeaders ?? {},
         responseHeaders = responseHeaders ?? {},
@@ -36,6 +38,11 @@ class GlobalCacheConfig implements CacheConfiguration {
 
   final Directory cacheDirectory;
 
+  /// Optional function to resolve the desired cache file for a given source URL.
+  /// Note that explicit files passed to [HttpCacheStream] will override this resolver.
+  /// If null, the default file path generation is used.
+  final File Function(Uri sourceUrl)? cacheFileResolver;
+
   @override
   final Client httpClient;
 
@@ -46,6 +53,9 @@ class GlobalCacheConfig implements CacheConfiguration {
   Map<String, String> requestHeaders;
   @override
   Map<String, String> responseHeaders;
+
+  @override
+  Duration autoDisposeDelay;
 
   @override
   bool copyCachedResponseHeaders;

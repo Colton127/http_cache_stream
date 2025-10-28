@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:http_cache_stream/http_cache_stream.dart';
-import 'package:http_cache_stream/src/etc/const.dart';
+import 'package:http_cache_stream/src/models/cache_files/cache_file_type.dart';
 
 class FileStreamResponse extends StreamResponse {
   final File file;

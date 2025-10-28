@@ -18,6 +18,8 @@ abstract class DefaultCacheConfig {
 
   static const bool validateOutdatedCache = false;
 
+  static const Duration autoDisposeDelay = Duration(seconds: 30);
+
   static Future<Directory> defaultCacheDirectory() async {
     final temporaryDirectory = await getTemporaryDirectory();
     return Directory(p.join(temporaryDirectory.path, 'http_cache_stream'));
