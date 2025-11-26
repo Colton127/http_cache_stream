@@ -106,7 +106,7 @@ class CachedResponseHeaders {
     try {
       return HttpDate.parse(
           value); // Try to parse the date (not all servers return a valid date)
-    } catch (e) {
+    } catch (_) {
       return null;
     }
   }
@@ -126,25 +126,30 @@ class CachedResponseHeaders {
 
   ///Extracts [CachedResponseHeaders] from a [BaseResponse].
   ///If the response is a range response, the content range header is removed, and the source length is set to the range source length.
-  factory CachedResponseHeaders.fromBaseResponse(BaseResponse response) {
+  factory CachedResponseHeaders.fromBaseResponse(final BaseResponse response) {
     final Map<String, String> headers = {...response.headers};
-    final contentRangeHeader = headers.remove(HttpHeaders.contentRangeHeader);
-    if (contentRangeHeader != null) {
+
+    if (headers.remove(HttpHeaders.contentRangeHeader) != null) {
       headers[HttpHeaders.acceptRangesHeader] =
           'bytes'; // Ensure accept-ranges is set to bytes for range responses. Not all servers do this.
-      final rangeSourceLength = HttpRangeResponse.parse(
-        contentRangeHeader,
-        response.contentLength,
-      )?.sourceLength;
-      if (rangeSourceLength != null) {
-        headers[HttpHeaders.contentLengthHeader] = rangeSourceLength.toString();
-      } else {
-        headers.remove(HttpHeaders.contentLengthHeader);
+
+      final HttpRangeResponse? rangeResponse =
+          HttpRangeResponse.parse(response);
+      if (rangeResponse != null) {
+        final int? rangeSourceLength = rangeResponse.sourceLength;
+        if (rangeSourceLength != null) {
+          headers[HttpHeaders.contentLengthHeader] =
+              rangeSourceLength.toString();
+        } else if (!rangeResponse.isFull) {
+          headers.remove(HttpHeaders.contentLengthHeader);
+        }
       }
     }
+
     if (!headers.containsKey(HttpHeaders.dateHeader)) {
       headers[HttpHeaders.dateHeader] = HttpDate.format(DateTime.now());
     }
+
     return CachedResponseHeaders._(headers);
   }
 
@@ -166,7 +171,8 @@ class CachedResponseHeaders {
         url,
         headers: requestHeaders,
       );
-      if (response.statusCode != HttpStatus.ok) {
+      if (response.statusCode != HttpStatus.ok &&
+          response.statusCode != HttpStatus.partialContent) {
         throw HttpStatusCodeException(url, HttpStatus.ok, response.statusCode);
       }
       return CachedResponseHeaders.fromBaseResponse(response);

@@ -76,7 +76,7 @@ class Downloader {
       }
     } finally {
       if (invalidCacheOccurred) {
-        buffer.clear(); //Clear buffer if an invalid cache occurred
+        buffer.clear(); //Clear buffer if an InvalidCacheException occurred
       } else {
         if (buffer.isPaused) {
           await buffer
@@ -143,9 +143,12 @@ class Downloader {
     }
   }
 
-  void pause({bool flush = false}) {
+  ///Pauses the emission of data from the downloader. If [flush] is true, any buffered data will be flushed immediately.
+  ///This does not pause the download. Rather, it pauses the emission of data to the consumer. New data will still be downloaded and buffered, but not emitted until resumed.
+  void pauseEmission({bool flush = false}) {
     flush = flush && !isPaused;
     _pauseCount = _pauseCount <= 0 ? 1 : _pauseCount + 1;
+
     final buffer = _buffer;
     if (buffer != null) {
       buffer.pause();
@@ -153,7 +156,7 @@ class Downloader {
     }
   }
 
-  void resume() {
+  void resumeEmission() {
     if (_pauseCount > 1) {
       _pauseCount--;
     } else {
@@ -169,7 +172,7 @@ class Downloader {
   int _pauseCount = 0;
   bool _closed = false;
 
-  ///The number of bytes received from the current stream. This is not always the same as the position.
+  ///The number of bytes emitted by the downloader. This is not always the same as the position.
   int get receivedBytes => _receivedBytes;
 
   ///If the stream closed with a done event
@@ -178,7 +181,7 @@ class Downloader {
   ///If the stream is currently active. This is true if the downloader is not closed and not done.
   bool get isActive => !isClosed && !isDone;
 
-  ///The current position of the stream, this is the sum of the start position and the received bytes.
+  ///The current position of the download, this is the sum of the start position and the received bytes.
   int get position => downloadRange.start + _receivedBytes;
 
   ///If the downloader has been closed. The downloader cannot be used after it is closed.

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:http_cache_stream/src/cache_stream/cache_downloader/cache_downloader.dart';
@@ -16,13 +17,13 @@ import '../models/stream_response/stream_response.dart';
 
 class HttpCacheStream {
   ///The source Url of the file to be downloaded (e.g., https://example.com/file.mp3)
-  final Uri sourceUrl;
+  Uri get sourceUrl => metadata.sourceUrl;
 
   ///The Url of the cached stream (e.g., http://127.0.0.1:8080/file.mp3)
   final Uri cacheUrl;
 
   /// The complete, partial, and metadata files used for the cache.
-  final CacheFiles files;
+  CacheFiles get files => metadata.cacheFiles;
 
   /// The cache config used for this stream. By default, values from [GlobalCacheConfig] are used.
   final StreamCacheConfig config;
@@ -37,16 +38,15 @@ class HttpCacheStream {
   Future<bool>? _validateCacheFuture;
   double? _lastProgress; //The last progress value emitted by the stream
   Object? _lastError; //The last error emitted by the stream
-  bool _initProgressEmitted =
-      false; //Whether the initial progress value has been emitted
+  bool _progressEmitted = false; //Whether progress has been emitted yet
   final _disposeCompleter =
       Completer<void>(); //Completer for the dispose future
   CacheMetadata _cacheMetadata; //The metadata for the cache
 
   HttpCacheStream({
-    required this.sourceUrl,
+    required Uri sourceUrl,
+    required CacheFiles files,
     required this.cacheUrl,
-    required this.files,
     required this.config,
   }) : _cacheMetadata = CacheMetadata.construct(files, sourceUrl) {
     if (config.validateOutdatedCache) {
@@ -103,7 +103,7 @@ class HttpCacheStream {
     if (_validateCacheFuture != null) {
       return _validateCacheFuture;
     }
-    if (isDownloading || _getCacheProgress() != 1.0) {
+    if (isDownloading || _calculateCacheProgress() != 1.0) {
       return null; //Cache does not exist or is downloading
     }
     final currentHeaders =
@@ -125,7 +125,7 @@ class HttpCacheStream {
       }
     }).whenComplete(() {
       _validateCacheFuture = null;
-      _getCacheProgress();
+      _calculateCacheProgress();
     });
     return _validateCacheFuture;
   }
@@ -143,11 +143,10 @@ class HttpCacheStream {
 
     bool isComplete() {
       if (downloadCompleter.isCompleted) return true;
-      final completed = _getCacheProgress() == 1.0;
-      if (completed) {
+      if (_calculateCacheProgress() == 1.0) {
         downloadCompleter.complete(cacheFile);
       }
-      return completed;
+      return downloadCompleter.isCompleted;
     }
 
     try {
@@ -182,6 +181,11 @@ class HttpCacheStream {
                 if (bytesRemaining <= 0) {
                   downloader.processRequest(request);
                   return true;
+                } else if (sourceLength != null &&
+                    request.start > sourceLength) {
+                  request.completeError(
+                      RangeError.range(request.start, 0, sourceLength));
+                  return true;
                 } else if (rangeThreshold != null &&
                     bytesRemaining > rangeThreshold) {
                   request.complete(StreamResponse.fromDownload(
@@ -194,13 +198,13 @@ class HttpCacheStream {
             },
             onComplete: () async {
               await files.partial.rename(files.complete.path);
-              config.onCacheComplete(this, files.complete);
               final cachedHeaders = metadata.headers!;
               if (cachedHeaders.sourceLength != downloader.downloadPosition ||
                   !cachedHeaders.acceptsRangeRequests) {
                 _setCachedResponseHeaders(
                     cachedHeaders.setSourceLength(downloader.downloadPosition));
               }
+              config.onCacheComplete(this, files.complete);
             },
             onHeaders: (cacheHttpHeaders) {
               _setCachedResponseHeaders(cacheHttpHeaders);
@@ -248,9 +252,7 @@ class HttpCacheStream {
     } else {
       _retainCount = 0;
       late final error = CacheStreamDisposedException(sourceUrl);
-      if (_queuedRequests.isNotEmpty) {
-        _addError(error, closeRequests: true);
-      }
+
       final downloader = _cacheDownloader;
       if (downloader != null) {
         await downloader
@@ -260,13 +262,16 @@ class HttpCacheStream {
 
       if (!_disposeCompleter.isCompleted && !isRetained) {
         _disposeCompleter.complete();
-        _progressController.close().ignore();
-        if (!config.savePartialCache) {
-          files.delete(partialOnly: true).ignore();
+
+        if (_queuedRequests.isNotEmpty) {
+          _addError(error, closeRequests: true);
         }
-        if (!config.saveMetadata &&
-            files.metadata.existsSync() &&
-            cacheFile.existsSync()) {
+
+        _progressController.close().ignore();
+
+        if (!config.savePartialCache && progress != 1.0) {
+          files.delete(partialOnly: true).ignore();
+        } else if (!config.saveMetadata && progress == 1.0) {
           files.metadata.delete().ignore();
         }
       }
@@ -283,56 +288,45 @@ class HttpCacheStream {
       return downloader.cancel(
           error); //Close the ongoing download, which will rethrow the exception and reset the cache
     } else {
-      _queuedRequests.removeWhere((request) {
-        if (request.isRangeRequest) {
-          //If the request is a range request, complete it with an error as it will not be valid anymore
-          request.completeError(error);
-          return true;
-        }
-        return false;
-      });
-      _cacheMetadata = _cacheMetadata.copyWith(headers: null);
+      _cacheMetadata = _cacheMetadata.updateHeaders(null);
       _updateProgressStream(null);
       _addError(error, closeRequests: false);
-      await files.delete().catchError((_) => false);
+      await files.delete().ignoreError();
       if (_queuedRequests.isNotEmpty && !isDownloading && isRetained) {
         download().ignore(); //Restart download to fulfill pending requests
       }
     }
   }
 
-  void _setCachedResponseHeaders(CachedResponseHeaders headers) {
-    _validateRequests(_cacheMetadata.sourceLength, headers.sourceLength);
-    _cacheMetadata = _cacheMetadata.copyWith(headers: headers)..save();
-  }
-
-  ///Validates the requests in the queue. If any requests exceed the new source length, they are removed from the queue and completed with a [RangeError].
-  void _validateRequests(int? previousSourceLength, int? nextSourceLength) {
-    if (_queuedRequests.isEmpty ||
-        nextSourceLength == null ||
-        previousSourceLength == nextSourceLength) {
-      return;
+  void _setCachedResponseHeaders(CachedResponseHeaders? headers) async {
+    try {
+      _cacheMetadata = _cacheMetadata.updateHeaders(headers);
+      await files.metadata.writeAsString(jsonEncode(_cacheMetadata.toJson()));
+    } catch (e, st) {
+      _addError(e, stackTrace: st, closeRequests: false);
     }
-    _queuedRequests.removeWhere((request) {
-      if (request.range.exceeds(nextSourceLength)) {
-        request.completeError(
-          RangeError.range(request.range.greatest, 0, nextSourceLength),
-        );
-        return true;
-      }
-      return false;
-    });
   }
 
-  double? _getCacheProgress() {
-    final cacheProgress = metadata.cacheProgress();
+  double? _calculateCacheProgress() {
+    double? cacheProgress;
+    try {
+      cacheProgress = metadata.cacheProgress();
+    } catch (e, st) {
+      _addError(e, stackTrace: st, closeRequests: false);
+    }
     _updateProgressStream(cacheProgress);
     return cacheProgress;
   }
 
   void _updateProgressStream(final double? progress) {
-    _initProgressEmitted = true;
+    _progressEmitted = true;
 
+    if (progress != _lastProgress) {
+      _lastProgress = progress;
+      if (_progressController.hasListener && !_progressController.isClosed) {
+        _progressController.add(progress);
+      }
+    }
     if (progress == 1.0 && _queuedRequests.isNotEmpty) {
       _queuedRequests.removeWhere((request) {
         request.complete(
@@ -345,23 +339,17 @@ class HttpCacheStream {
         return true;
       });
     }
-
-    if (progress != _lastProgress) {
-      _lastProgress = progress;
-      if (_progressController.hasListener && !_progressController.isClosed) {
-        _progressController.add(progress);
-      }
-    }
   }
 
-  void _addError(final Object error, {final bool closeRequests = true}) {
+  void _addError(final Object error,
+      {StackTrace? stackTrace, final bool closeRequests = true}) {
     _lastError = error;
     if (_progressController.hasListener && !_progressController.isClosed) {
-      _progressController.addError(error);
+      _progressController.addError(error, stackTrace);
     }
     if (closeRequests) {
       _queuedRequests.removeWhere((request) {
-        request.completeError(error);
+        request.completeError(error, stackTrace);
         return true;
       });
     }
@@ -382,13 +370,10 @@ class HttpCacheStream {
 
   ///Returns a stream of download progress 0-1, rounded to 2 decimal places, and any errors that occur.
   ///Returns null if the source length is unknown. Returns 1.0 only if the cache file exists.
-  Stream<double?> get progressStream {
-    if (!_initProgressEmitted) _getCacheProgress();
-    return _progressController.stream;
-  }
+  Stream<double?> get progressStream => _progressController.stream;
 
   ///Returns true if the cache file exists.
-  bool get isCached => cacheFile.existsSync();
+  bool get isCached => progress == 1.0;
 
   ///If this [HttpCacheStream] has been disposed. A disposed stream cannot be used.
   bool get isDisposed => _disposeCompleter.isCompleted;
@@ -403,10 +388,8 @@ class HttpCacheStream {
   int get retainCount => _retainCount;
 
   ///The latest download progress 0-1, rounded to 2 decimal places. Returns null if the source length is unknown. Returns 1.0 only if the cache file exists.
-  double? get progress {
-    if (!_initProgressEmitted) _getCacheProgress();
-    return _lastProgress;
-  }
+  double? get progress =>
+      _progressEmitted ? _lastProgress : _calculateCacheProgress();
 
   ///Returns the last emitted error, or null if error events haven't yet been emitted.
   Object? get lastErrorOrNull => _lastError;

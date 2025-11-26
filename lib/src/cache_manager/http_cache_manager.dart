@@ -19,6 +19,7 @@ class HttpCacheManager {
       : _lazyStreamManager = LazyCacheStreamManager(_server.serverUri) {
     _server.start((request) {
       final lazyStream = _lazyStreamManager.getLazyStream(request);
+
       if (lazyStream != null) {
         final cacheStream = createStream(
           lazyStream.sourceUrl,
@@ -33,9 +34,9 @@ class HttpCacheManager {
                   .ignore()); // Decrease the stream's retainCount for autoDispose
         });
         return cacheStream;
+      } else {
+        return getExistingStream(request.uri);
       }
-
-      return getExistingStream(request.uri);
     });
   }
 

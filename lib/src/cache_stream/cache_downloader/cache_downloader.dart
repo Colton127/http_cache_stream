@@ -117,9 +117,10 @@ class CacheDownloader {
     _isProcessingRequests = true;
 
     try {
-      _downloader.pause(
-          flush: true); //Pause the downloader while processing requests
-      await _sink.flush(); //Ensure all data is flushed to disk
+      _downloader.pauseEmission(
+          flush:
+              true); //Pause the emission of new data while processing requests.
+      await _sink.flush(); //Ensure all buffered data is flushed to disk.
 
       if (_downloader.isClosed) {
         throw DownloadStoppedException(sourceUrl);
@@ -132,7 +133,8 @@ class CacheDownloader {
           final response = StreamResponse.fromCacheStream(
             request.range,
             partialCacheFile,
-            _streamController.stream,
+            _streamController
+                .stream, //The next data emitted from the stream must begin from the current flush position
             downloadPosition,
             _sourceLength,
           );
@@ -140,14 +142,14 @@ class CacheDownloader {
         }
         return true;
       });
-    } catch (e) {
+    } catch (e, st) {
       _processingRequests.removeWhere((request) {
-        request.completeError(e);
+        request.completeError(e, st);
         return true;
       });
     } finally {
       _isProcessingRequests = false;
-      _downloader.resume();
+      _downloader.resumeEmission();
     }
   }
 
@@ -165,13 +167,16 @@ class CacheDownloader {
 
 int _startPosition(final CacheMetadata cacheMetadata) {
   final partialCacheFile = cacheMetadata.cacheFiles.partial;
-  final partialCacheStat = partialCacheFile.statSync();
-  final partialCacheSize = partialCacheStat.size;
-  if (partialCacheStat.type != FileSystemEntityType.file) {
-    partialCacheFile.createSync(recursive: true); //Create the file
-  } else if (partialCacheSize > 0 &&
-      cacheMetadata.headers?.canResumeDownload() == true) {
-    return partialCacheSize; //Return the size of the partial cache
+
+  if (cacheMetadata.headers?.canResumeDownload() == true) {
+    final partialCacheStat = partialCacheFile.statSync();
+    if (partialCacheStat.type == FileSystemEntityType.file &&
+        partialCacheStat.size >= 0) {
+      return partialCacheStat.size; //Return the size of the partial cache.
+    }
   }
-  return 0;
+
+  partialCacheFile.parent.createSync(
+      recursive: true); //Create the parent directory if it doesn't exist.
+  return 0; //The IOSink will manage the file creation.
 }

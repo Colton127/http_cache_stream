@@ -77,6 +77,10 @@ abstract class HttpRange {
     return effectiveEnd - start;
   }
 
+  bool get isFull {
+    return start == 0 && (end == null || endEx == sourceLength);
+  }
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;

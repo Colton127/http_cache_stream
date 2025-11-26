@@ -1,3 +1,7 @@
+import 'dart:io';
+
+import 'package:http/http.dart' as http;
+
 extension UriExtensions on Uri {
   //A helper method to get the path and query of a URI
   //This is useful for creating a unique key to identify the request
@@ -54,3 +58,9 @@ extension FutureExtensions<T> on Future<T> {
     }
   }
 }
+
+extension IOHttpRequestExtensions on HttpRequest {
+  String? get rangeHeader => headers.value(HttpHeaders.rangeHeader);
+}
+
+extension HttpResponseExtensions on http.BaseResponse {}

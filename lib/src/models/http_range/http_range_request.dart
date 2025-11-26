@@ -1,12 +1,9 @@
-import 'dart:io';
-
 import 'http_range.dart';
 
 class HttpRangeRequest extends HttpRange {
   const HttpRangeRequest._(super.start, super.end);
 
-  static HttpRangeRequest? parse(final HttpRequest request) {
-    final rangeHeader = request.headers.value(HttpHeaders.rangeHeader);
+  static HttpRangeRequest? parse(final String? rangeHeader) {
     if (rangeHeader == null || rangeHeader.isEmpty) return null;
     final (int? start, int? end, int? sourceLength) = HttpRange.parse(
       rangeHeader,

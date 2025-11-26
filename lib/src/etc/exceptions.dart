@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:http/http.dart';
 import 'package:http_cache_stream/src/models/http_range/http_range.dart';
 
 import '../models/http_range/http_range_request.dart';
@@ -71,5 +72,20 @@ class HttpStatusCodeException extends HttpException {
     if (result != expected) {
       throw HttpStatusCodeException(url, expected, result);
     }
+  }
+
+  static void validateCompleteResponse(
+    final Uri url,
+    final BaseResponse response,
+  ) {
+    if (response.statusCode == HttpStatus.ok) return;
+
+    if (response.statusCode == HttpStatus.partialContent) {
+      if (HttpRangeResponse.parse(response)?.isFull == true) {
+        return;
+      }
+    }
+
+    throw HttpStatusCodeException(url, HttpStatus.ok, response.statusCode);
   }
 }

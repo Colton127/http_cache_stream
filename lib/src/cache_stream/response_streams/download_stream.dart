@@ -56,11 +56,11 @@ class DownloadStream extends Stream<List<int>> {
     try {
       downloadStream = DownloadStream(await client.send(request));
       if (rangeRequest == null) {
-        HttpStatusCodeException.validate(
-            url, HttpStatus.ok, downloadStream.statusCode);
+        HttpStatusCodeException.validateCompleteResponse(
+            url, downloadStream.baseResponse);
       } else {
         HttpRangeException.validate(
-            url, rangeRequest, downloadStream.responseRange);
+            url, rangeRequest, downloadStream.rangeResponse);
       }
       return downloadStream;
     } catch (_) {
@@ -98,19 +98,10 @@ class DownloadStream extends Stream<List<int>> {
   bool get hasListener => _listened;
   BaseResponse get baseResponse => _streamedResponse;
 
-  HttpRangeResponse? get responseRange {
-    return HttpRangeResponse.parse(
-      baseResponse.headers[HttpHeaders.contentRangeHeader],
-      baseResponse.contentLength,
-    );
-  }
+  HttpRangeResponse? get rangeResponse => HttpRangeResponse.parse(baseResponse);
 
-  int? get sourceLength {
-    if (baseResponse.headers.containsKey(HttpHeaders.contentRangeHeader)) {
-      return responseRange?.sourceLength;
-    }
-    return baseResponse.contentLength;
-  }
+  int? get sourceLength =>
+      rangeResponse?.sourceLength ?? baseResponse.contentLength;
 
   CachedResponseHeaders get cachedResponseHeaders {
     return CachedResponseHeaders.fromBaseResponse(baseResponse);

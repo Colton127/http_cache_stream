@@ -36,7 +36,11 @@ class _MyAppState extends State<MyApp> {
                       if (initialized) {
                         HttpCacheManager.instance.dispose();
                       } else {
-                        await HttpCacheManager.init();
+                        final config = await GlobalCacheConfig.init();
+                        config.autoDisposeDelay = const Duration(
+                          hours: 24,
+                        ); //Test
+                        await HttpCacheManager.init(config: config);
                       }
                       setState(() {});
                     },

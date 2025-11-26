@@ -43,43 +43,30 @@ class CacheMetadata {
   ///The progress reported here may be inaccurate if a download is ongoing. Use [progress] on [HttpCacheStream] to get the most accurate progress.
   ///On the other hand, if a download is not ongoing, this method is the most accurate way to get the progress.
   double? cacheProgress() {
-    try {
-      if (isComplete) {
-        return 1.0;
-      }
-      final sourceLength = this.sourceLength;
-      final hasSourceLength = sourceLength != null && sourceLength > 0;
+    if (isComplete) return 1.0;
 
-      final partialCacheSize = partialCacheFile.statSync().size;
-      if (partialCacheSize <= 0) {
-        return hasSourceLength ? 0.0 : null;
-      } else if (partialCacheSize == sourceLength) {
-        partialCacheFile.renameSync(
-          cacheFile.path,
-        ); //Rename the partial cache to the complete cache
-        return 1.0;
-      } else if (!hasSourceLength ||
-          partialCacheSize > sourceLength ||
-          headers?.canResumeDownload() != true) {
-        partialCacheFile
-            .deleteSync(); //Reset the cache, since the download cannot be resumed
-        return 0.0;
-      } else {
-        return ((partialCacheSize / sourceLength) * 100).floor() /
-            100; //Round to 2 decimal places
-      }
-    } catch (e) {
-      assert(false, 'CacheMetadata: cacheProgress: error $e');
-      return null;
+    final sourceLength = this.sourceLength;
+    final hasSourceLength = sourceLength != null && sourceLength > 0;
+    if (!hasSourceLength) return null;
+
+    final partialCacheSize = partialCacheFile.statSync().size;
+    if (partialCacheSize <= 0) {
+      return 0.0;
+    } else if (partialCacheSize == sourceLength) {
+      partialCacheFile.renameSync(
+          cacheFile.path); //Rename the partial cache to the complete cache
+      return 1.0;
+    } else if (partialCacheSize > sourceLength) {
+      partialCacheFile.deleteSync(); //Reset the cache
+      return 0.0;
+    } else {
+      return ((partialCacheSize / sourceLength) * 100).floor() /
+          100; //Round to 2 decimal places
     }
   }
 
   ///Returns true if the cache is complete. Returns false if the cache is incomplete or does not exist.
   bool get isComplete => cacheFiles.complete.existsSync();
-
-  Future<void> save() {
-    return metaDataFile.writeAsString(jsonEncode(toJson()));
-  }
 
   int? get sourceLength => headers?.sourceLength;
   File get metaDataFile => cacheFiles.metadata;
@@ -93,15 +80,11 @@ class CacheMetadata {
     };
   }
 
-  CacheMetadata copyWith({
-    CacheFiles? cacheFiles,
-    Uri? sourceUrl,
-    CachedResponseHeaders? headers,
-  }) {
+  CacheMetadata updateHeaders(CachedResponseHeaders? headers) {
     return CacheMetadata._(
-      cacheFiles ?? this.cacheFiles,
-      sourceUrl ?? this.sourceUrl,
-      headers: headers ?? this.headers,
+      cacheFiles,
+      sourceUrl,
+      headers: headers,
     );
   }
 

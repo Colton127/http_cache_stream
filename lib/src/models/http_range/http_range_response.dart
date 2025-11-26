@@ -1,3 +1,7 @@
+import 'dart:io';
+
+import 'package:http/http.dart';
+
 import 'http_range.dart';
 
 class HttpRangeResponse extends HttpRange {
@@ -5,15 +9,18 @@ class HttpRangeResponse extends HttpRange {
 
   /// Parses the Content-Range header from a response.
   /// If the header is not present or is invalid, returns null.
-  static HttpRangeResponse? parse(
-      final String? contentRangeHeader, final int? contentLength) {
-    if (contentRangeHeader == null || contentRangeHeader.isEmpty) return null;
+  static HttpRangeResponse? parse(final BaseResponse response) {
+    final String? contentRangeHeader =
+        response.headers[HttpHeaders.contentRangeHeader];
+    if (contentRangeHeader == null) return null;
+
     var (int? start, int? end, int? sourceLength) =
         HttpRange.parse(contentRangeHeader);
     if (start == null && end == null && sourceLength == null) {
       return null;
     }
     start ??= 0;
+    final int? contentLength = response.contentLength;
     if (sourceLength == null &&
         start == 0 &&
         end == null &&

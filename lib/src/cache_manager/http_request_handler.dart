@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:mime/mime.dart';
 
 import '../../http_cache_stream.dart';
+import '../etc/extensions.dart';
 import '../models/http_range/http_range.dart';
 import '../models/http_range/http_range_request.dart';
 import '../models/http_range/http_range_response.dart';
@@ -32,7 +33,7 @@ class RequestHandler {
     Object? error;
     StreamResponse? streamResponse;
     try {
-      final rangeRequest = HttpRangeRequest.parse(httpRequest);
+      final rangeRequest = HttpRangeRequest.parse(httpRequest.rangeHeader);
       streamResponse = await cacheStream.request(
         start: rangeRequest?.start,
         end: rangeRequest?.endEx,

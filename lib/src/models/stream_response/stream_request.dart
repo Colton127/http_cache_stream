@@ -26,10 +26,10 @@ class StreamRequest {
     }
   }
 
-  void completeError(final Object error) {
+  void completeError(final Object error, [StackTrace? stackTrace]) {
     assert(!_responseCompleter.isCompleted, 'Response already completed');
     if (!_responseCompleter.isCompleted) {
-      _responseCompleter.completeError(error);
+      _responseCompleter.completeError(error, stackTrace);
     }
   }
 
