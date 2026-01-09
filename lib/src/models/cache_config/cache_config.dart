@@ -29,21 +29,30 @@ abstract interface class CacheConfiguration {
   int? get rangeRequestSplitThreshold;
   set rangeRequestSplitThreshold(int? value);
 
-  ///The maximum amount of data to buffer in memory before writing to disk during a download.
-  ///Once this limit is reached, the cache stream will flush the buffer to disk. However, the download will continue to buffer more data. The download stream will only be paused if it is receiving more data than it can write to disk. As a result, the theoretical maximum memory usage of a cache download is double this value.
-  ///Default value is 25MB.
+  ///The maximum amount of data to buffer in memory per cache response stream
+  ///
+  ///Default is 25 MB.
   int get maxBufferSize;
   set maxBufferSize(int value);
 
   /// The preferred minimum size of chunks emitted from the cache download stream.
   /// Network data is buffered until reaching this size before being emitted downstream.
   /// Larger values improve I/O efficiency at the cost of increased memory usage.
-  /// Default value is 64KB.
+  ///
+  /// Default is 64 KB.
   int get minChunkSize;
   set minChunkSize(int value);
 
   /// The HTTP client used to download cache.
   Client get httpClient;
+
+  ///Whether to save all response headers in the cached response metadata.
+  ///
+  ///When false, only essential headers are saved. This can reduce metadata size, but may omit headers needed for certain use cases.
+  ///
+  ///Default is true.
+  bool get saveAllHeaders;
+  set saveAllHeaders(bool value);
 
   /// When false, deletes partial cache files (including metadata) when a http cache stream is disposed before cache is complete.
   /// Default is true.
@@ -53,9 +62,18 @@ abstract interface class CacheConfiguration {
   /// When false, deletes the metadata file after the cache is complete.
   /// Metadata is always saved for incomplete cache files when [savePartialCache] is true, so the download can be resumed.
   /// This value should only be set to false if you have no intention of creating a cache stream for the cache file again.
-  /// Default is true.
   bool get saveMetadata;
   set saveMetadata(bool value);
+
+  /// The delay between retry attempts when a download fails.
+  Duration get retryDelay;
+  set retryDelay(Duration value);
+
+  /// The timeout duration for queued cache requests. Requests that are not fulfilled within this duration will throw a timeout exception.
+  ///
+  /// Default is 30 seconds.
+  Duration get cacheRequestTimeout;
+  set cacheRequestTimeout(Duration value);
 
   static int? validateRangeRequestSplitThreshold(int? value) {
     if (value == null) return null;

@@ -1,8 +1,38 @@
 include: package:flutter_lints/flutter.yaml
 
+analyzer:
+  exclude:
+    - ".dart_tool/**"
+    - ".pub/**"
+    - "build/**"
+    - "example/**/build/**"
+    - "example/.dart_tool/**"
+    - "test/**/.dart_tool/**"
+    - "lib/src/gen/**"
+
 linter:
   rules:
-    - avoid_slow_async_io
+    # API and typing
+    always_declare_return_types: true
+    annotate_overrides: true
 
-# Additional information about this file can be found at
-# https://dart.dev/guides/language/analysis-options
+    # Style and consistency
+    prefer_const_constructors: true
+    prefer_const_constructors_in_immutables: true
+    prefer_const_literals_to_create_immutables: true
+    prefer_final_fields: true
+    #prefer_final_locals: true
+    prefer_single_quotes: true
+    file_names: true
+
+    # Safety and correctness
+    avoid_returning_this: true
+    use_rethrow_when_possible: true
+    unnecessary_this: true
+    unnecessary_const: true
+    no_leading_underscores_for_local_identifiers: false # keep default, adjust if needed
+
+    # Maintainability
+    avoid_print: true
+    test_types_in_equals: true
+    hash_and_equals: true

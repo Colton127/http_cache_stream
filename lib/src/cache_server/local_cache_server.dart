@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:http_cache_stream/http_cache_stream.dart';
 import 'package:http_cache_stream/src/cache_manager/http_request_handler.dart';
 
@@ -19,31 +18,36 @@ class LocalCacheServer {
     return LocalCacheServer._(httpServer);
   }
 
-  void start(
-      final HttpCacheStream? Function(HttpRequest request) getCacheStream) {
+  void start(final HttpCacheStream? Function(HttpRequest request) getCacheStream) {
     _httpServer.listen(
-      (request) {
-        final httpCacheStream =
-            request.method == 'GET' ? getCacheStream(request) : null;
-        if (httpCacheStream != null) {
-          final requestHandler = RequestHandler(request);
-          requestHandler.stream(httpCacheStream);
-        } else {
-          request.response.statusCode = HttpStatus.clientClosedRequest;
-          request.response.close().ignore();
+      (request) async {
+        final requestHandler = RequestHandler(request);
+        try {
+          if (request.method != 'GET' && request.method != 'HEAD') {
+            requestHandler.close(HttpStatus.methodNotAllowed);
+            return;
+          }
+          final httpCacheStream = getCacheStream(request);
+          if (httpCacheStream == null) {
+            requestHandler.close(HttpStatus.serviceUnavailable);
+            return;
+          }
+          await requestHandler.stream(httpCacheStream);
+          requestHandler.close();
+        } catch (_) {
+          requestHandler.close(HttpStatus.internalServerError);
         }
       },
-      onError: (Object e, StackTrace st) {
-        if (kDebugMode) print('HttpCacheStream Proxy server onError: $e');
-      },
+      onError: (_) {},
       cancelOnError: false,
     );
   }
 
   Uri getCacheUrl(Uri sourceUrl) {
-    return sourceUrl.replace(
-        scheme: serverUri.scheme, host: serverUri.host, port: serverUri.port);
+    return sourceUrl.replace(scheme: serverUri.scheme, host: serverUri.host, port: serverUri.port);
   }
+
+  HttpConnectionsInfo connectionsInfo() => _httpServer.connectionsInfo();
 
   Future<void> close() {
     return _httpServer.close(force: true);

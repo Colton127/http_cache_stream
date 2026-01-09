@@ -1,3 +1,13 @@
+## 0.0.4
+* **Feat**: Add support for `HEAD` requests.
+* **Feat**: Add `cacheRequestTimeout` to cache configuration. Requests that are not completed within this duration are closed with a TimeoutException.
+* **Feat**: Add `retryDelay` to cache configuration to adjust delay between download retries.
+* **Feat**: Add `saveAllHeaders` to cache configuration (defaults to `true`).
+* **Perf**: Reduced request response time during download
+* **Perf**: Reduced memory consumption
+* **Fix**: Improve handling of generic content types.
+* **Fix**: Improve general error handling.
+
 ## 0.0.3
 
 * Add acceptRangesHeader to partial content response headers

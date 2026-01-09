@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:http_cache_stream/src/models/metadata/cache_files.dart';
+import 'package:http_cache_stream/src/models/cache_files/cache_files.dart';
 import 'package:http_cache_stream/src/models/metadata/cached_response_headers.dart';
 
 class CacheMetadata {
@@ -13,14 +13,11 @@ class CacheMetadata {
   ///Constructs [CacheMetadata] from [CacheFiles] and sourceUrl.
   factory CacheMetadata.construct(
       final CacheFiles cacheFiles, final Uri sourceUrl) {
-    CachedResponseHeaders? headers;
-    if (cacheFiles.metadata.statSync().size > 0) {
-      final json = jsonDecode(cacheFiles.metadata.readAsStringSync())
-          as Map<String, dynamic>;
-      headers = CachedResponseHeaders.fromJson(json['headers']);
-    }
-    headers ??= CachedResponseHeaders.fromFile(cacheFiles.complete);
-    return CacheMetadata._(cacheFiles, sourceUrl, headers: headers);
+    return CacheMetadata._(
+      cacheFiles,
+      sourceUrl,
+      headers: CachedResponseHeaders.fromCacheFiles(cacheFiles),
+    );
   }
 
   ///Attempts to load the metadata file for the given [file]. Returns null if the metadata file does not exist.
@@ -32,8 +29,8 @@ class CacheMetadata {
   static CacheMetadata? fromCacheFiles(final CacheFiles cacheFiles) {
     final metadataFile = cacheFiles.metadata;
     if (!metadataFile.existsSync()) return null;
-    final metadataJson =
-        jsonDecode(metadataFile.readAsStringSync()) as Map<String, dynamic>;
+    final metadataJson = jsonDecode(metadataFile.readAsStringSync());
+    if (metadataJson is! Map<String, dynamic>) return null;
     final urlValue = metadataJson['Url'];
     final sourceUrl = urlValue == null ? null : Uri.tryParse(urlValue);
     if (sourceUrl == null) return null;
@@ -49,34 +46,25 @@ class CacheMetadata {
   ///The progress reported here may be inaccurate if a download is ongoing. Use [progress] on [HttpCacheStream] to get the most accurate progress.
   ///On the other hand, if a download is not ongoing, this method is the most accurate way to get the progress.
   double? cacheProgress() {
-    try {
-      if (isComplete) {
-        return 1.0;
-      }
-      final sourceLength = this.sourceLength;
-      final hasSourceLength = sourceLength != null && sourceLength > 0;
+    if (isComplete) return 1.0;
 
-      final partialCacheSize = partialCacheFile.statSync().size;
-      if (partialCacheSize <= 0) {
-        return hasSourceLength ? 0.0 : null;
-      } else if (partialCacheSize == sourceLength) {
-        partialCacheFile.renameSync(
-          cacheFile.path,
-        ); //Rename the partial cache to the complete cache
-        return 1.0;
-      } else if (!hasSourceLength ||
-          partialCacheSize > sourceLength ||
-          headers?.canResumeDownload() != true) {
-        partialCacheFile
-            .deleteSync(); //Reset the cache, since the download cannot be resumed
-        return 0.0;
-      } else {
-        return ((partialCacheSize / sourceLength) * 100).floor() /
-            100; //Round to 2 decimal places
-      }
-    } catch (e) {
-      assert(false, 'CacheMetadata: cacheProgress: error $e');
-      return null;
+    final sourceLength = this.sourceLength;
+    final hasSourceLength = sourceLength != null && sourceLength > 0;
+    if (!hasSourceLength) return null;
+
+    final partialCacheSize = partialCacheFile.statSync().size;
+    if (partialCacheSize <= 0) {
+      return 0.0;
+    } else if (partialCacheSize == sourceLength) {
+      partialCacheFile.renameSync(
+          cacheFile.path); //Rename the partial cache to the complete cache
+      return 1.0;
+    } else if (partialCacheSize > sourceLength) {
+      partialCacheFile.deleteSync(); //Reset the cache
+      return 0.0;
+    } else {
+      return ((partialCacheSize / sourceLength) * 100).floor() /
+          100; //Round to 2 decimal places
     }
   }
 
@@ -93,10 +81,6 @@ class CacheMetadata {
     return false;
   }
 
-  Future<void> save() {
-    return metaDataFile.writeAsString(jsonEncode(toJson()));
-  }
-
   int? get sourceLength => headers?.sourceLength;
   File get metaDataFile => cacheFiles.metadata;
   File get partialCacheFile => cacheFiles.partial;
@@ -109,15 +93,11 @@ class CacheMetadata {
     };
   }
 
-  CacheMetadata copyWith({
-    CacheFiles? cacheFiles,
-    Uri? sourceUrl,
-    CachedResponseHeaders? headers,
-  }) {
+  CacheMetadata setHeaders(CachedResponseHeaders? headers) {
     return CacheMetadata._(
-      cacheFiles ?? this.cacheFiles,
-      sourceUrl ?? this.sourceUrl,
-      headers: headers ?? this.headers,
+      cacheFiles,
+      sourceUrl,
+      headers: headers,
     );
   }
 

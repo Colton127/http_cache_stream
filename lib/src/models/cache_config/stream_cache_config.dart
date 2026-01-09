@@ -35,6 +35,11 @@ class StreamCacheConfig implements CacheConfiguration {
   }
 
   @override
+  bool get saveAllHeaders {
+    return _saveAllHeaders ?? _global.saveAllHeaders;
+  }
+
+  @override
   bool get copyCachedResponseHeaders {
     return _copyCachedResponseHeaders ?? _global.copyCachedResponseHeaders;
   }
@@ -73,6 +78,21 @@ class StreamCacheConfig implements CacheConfiguration {
   }
 
   @override
+  Duration get retryDelay {
+    return _retryDelay ?? _global.retryDelay;
+  }
+
+  @override
+  Duration get cacheRequestTimeout {
+    return _requestTimeout ?? _global.cacheRequestTimeout;
+  }
+
+  @override
+  set saveAllHeaders(bool value) {
+    _saveAllHeaders = value;
+  }
+
+  @override
   set copyCachedResponseHeaders(bool value) {
     _copyCachedResponseHeaders = value;
   }
@@ -95,8 +115,7 @@ class StreamCacheConfig implements CacheConfiguration {
   @override
   set rangeRequestSplitThreshold(int? value) {
     _useGlobalRangeRequestSplitThreshold = false;
-    _rangeRequestSplitThreshold =
-        CacheConfiguration.validateRangeRequestSplitThreshold(value);
+    _rangeRequestSplitThreshold = CacheConfiguration.validateRangeRequestSplitThreshold(value);
   }
 
   @override
@@ -109,6 +128,16 @@ class StreamCacheConfig implements CacheConfiguration {
     _minChunkSize = CacheConfiguration.validateMinChunkSize(value);
   }
 
+  @override
+  set retryDelay(Duration value) {
+    _retryDelay = value;
+  }
+
+  @override
+  set cacheRequestTimeout(Duration value) {
+    _requestTimeout = value;
+  }
+
   ///Register a callback to be called when this stream's cache is completely downloaded and written to disk.
   void Function(File cacheFile)? onCacheDone;
 
@@ -117,9 +146,7 @@ class StreamCacheConfig implements CacheConfiguration {
     return _combineHeaders(
       _global.requestHeaders,
       _requestHeaders,
-      defaultHeaders: const {
-        HttpHeaders.acceptEncodingHeader: 'identity'
-      }, // Avoid compressed responses
+      defaultHeaders: const {HttpHeaders.acceptEncodingHeader: 'identity'}, // Avoid compressed responses
     );
   }
 
@@ -159,9 +186,12 @@ class StreamCacheConfig implements CacheConfiguration {
   bool? _validateOutdatedCache;
   bool? _savePartialCache;
   bool? _saveMetadata;
+  bool? _saveAllHeaders;
   int? _maxBufferSize;
   int? _minChunkSize;
   int? _rangeRequestSplitThreshold;
+  Duration? _requestTimeout;
+  Duration? _retryDelay;
   Map<String, String>? _requestHeaders;
   Map<String, String>? _responseHeaders;
 }
