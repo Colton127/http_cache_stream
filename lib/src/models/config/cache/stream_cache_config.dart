@@ -82,6 +82,11 @@ class StreamCacheConfig implements CacheConfiguration {
   }
 
   @override
+  Duration get retryDelay {
+    return _retryDelay ?? _global.retryDelay;
+  }
+
+  @override
   bool get saveAllHeaders {
     return _saveAllHeaders ?? _global.saveAllHeaders;
   }
@@ -109,8 +114,7 @@ class StreamCacheConfig implements CacheConfiguration {
   @override
   set rangeRequestSplitThreshold(int? value) {
     _useGlobalRangeRequestSplitThreshold = false;
-    _rangeRequestSplitThreshold =
-        CacheConfiguration.validateRangeRequestSplitThreshold(value);
+    _rangeRequestSplitThreshold = CacheConfiguration.validateRangeRequestSplitThreshold(value);
   }
 
   @override
@@ -129,6 +133,11 @@ class StreamCacheConfig implements CacheConfiguration {
   }
 
   @override
+  set retryDelay(Duration value) {
+    _retryDelay = value;
+  }
+
+  @override
   set saveAllHeaders(bool value) {
     _saveAllHeaders = value;
   }
@@ -142,9 +151,7 @@ class StreamCacheConfig implements CacheConfiguration {
     return _combineHeaders(
       _global.requestHeaders,
       _requestHeaders,
-      defaultHeaders: const {
-        HttpHeaders.acceptEncodingHeader: 'identity'
-      }, // Avoid compressed responses
+      defaultHeaders: const {HttpHeaders.acceptEncodingHeader: 'identity'}, // Avoid compressed responses
     );
   }
 
@@ -183,6 +190,7 @@ class StreamCacheConfig implements CacheConfiguration {
   /// Stream-specific configuration
   bool _useGlobalRangeRequestSplitThreshold = true;
   Duration? _readTimeout;
+  Duration? _retryDelay;
   bool? _copyCachedResponseHeaders;
   bool? _validateOutdatedCache;
   bool? _savePartialCache;

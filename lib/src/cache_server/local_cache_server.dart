@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import '../etc/extensions/uri_extensions.dart';
+import '../models/config/server/server_config.dart';
 import '../request_handler/request_handler.dart';
 
 class LocalCacheServer {
@@ -12,18 +14,17 @@ class LocalCacheServer {
           port: _httpServer.port,
         );
 
-  static Future<LocalCacheServer> init() async {
-    final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    return LocalCacheServer._(httpServer);
+  static Future<LocalCacheServer> init([CacheServerConfig? serverConfig]) async {
+    serverConfig ??= const CacheServerConfig();
+    return LocalCacheServer._(await serverConfig.createServer());
   }
 
-  void start(
-      final Future<void> Function(RequestHandler handler) processRequest) {
+  void start(final Future<void> Function(RequestHandler handler) processRequest) {
     _httpServer.listen(
       (request) async {
         final requestHandler = RequestHandler(request);
         try {
-          if (request.method != 'GET') {
+          if (request.method != 'GET' && request.method != 'HEAD') {
             requestHandler.close(HttpStatus.methodNotAllowed);
           } else {
             await processRequest(requestHandler);
@@ -31,8 +32,7 @@ class LocalCacheServer {
         } catch (_) {
           requestHandler.close(HttpStatus.internalServerError);
         } finally {
-          assert(requestHandler.isClosed,
-              'RequestHandler should be closed after processing the request');
+          assert(requestHandler.isClosed, 'RequestHandler should be closed after processing the request');
         }
       },
       onError: (_) {},
@@ -41,8 +41,7 @@ class LocalCacheServer {
   }
 
   Uri getCacheUrl(Uri sourceUrl) {
-    return sourceUrl.replace(
-        scheme: serverUri.scheme, host: serverUri.host, port: serverUri.port);
+    return sourceUrl.replaceOrigin(serverUri);
   }
 
   Future<void> close() {

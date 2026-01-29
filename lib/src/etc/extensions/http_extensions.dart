@@ -11,7 +11,7 @@ extension HttpClientExtensions on http.Client {
   ) {
     final completer = Completer<http.StreamedResponse>();
     final timer = Timer(timeout, () {
-      completer.completeError(RequestTimedOutException(request.url, timeout));
+      completer.completeError(ResponseTimedOutException(request.url, timeout));
     });
 
     () async {
@@ -38,8 +38,7 @@ extension HttpStreamedResponseExtensions on http.StreamedResponse {
   ///To cancel the response, we need to call cancel on the stream.
   void close() async {
     try {
-      await (stream.listen(null, onError: (_) {}, cancelOnError: true))
-          .cancel();
+      await (stream.listen(null, onError: (_) {}, cancelOnError: true)).cancel();
     } catch (_) {}
   }
 }

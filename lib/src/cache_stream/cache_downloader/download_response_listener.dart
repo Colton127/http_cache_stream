@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import '../../../http_cache_stream.dart';
 import '../../etc/chunked_bytes_buffer.dart';
 import '../../etc/timeout_timer.dart';
+import '../../models/config/cache/stream_cache_config.dart';
 import '../../models/exceptions/http_exceptions.dart';
 
 class DownloadResponseListener {
@@ -29,12 +29,12 @@ class DownloadResponseListener {
       onError: (e) {
         _buffer.flush();
         _timeoutTimer.cancel();
-        _completer.completeError(e);
+        _completer.completeError(DownloadResponseException(sourceUrl, e));
       },
       cancelOnError: true,
     );
     _timeoutTimer.start(() {
-      cancel(ReadTimedOutException(sourceUrl, _timeoutTimer.duration));
+      cancel(ReadTimedOutException(sourceUrl, _timeoutTimer.duration), flushBuffer: true);
     });
   }
 

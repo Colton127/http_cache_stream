@@ -3,11 +3,9 @@ import 'dart:io';
 
 import 'package:http/http.dart';
 import 'package:http_cache_stream/http_cache_stream.dart';
-import 'package:http_cache_stream/src/models/exceptions/invalid_cache_exceptions.dart';
 import 'package:http_cache_stream/src/models/http_range/http_range_response.dart';
 
 import '../../etc/extensions/http_extensions.dart';
-import '../../models/exceptions/http_exceptions.dart';
 
 class DownloadStream extends Stream<List<int>> {
   final StreamedResponse _streamedResponse;
@@ -25,14 +23,12 @@ class DownloadStream extends Stream<List<int>> {
       request.headers[HttpHeaders.rangeHeader] = rangeRequest.header;
     }
 
-    final streamedResponse =
-        await config.httpClient.sendWithTimeout(request, config.readTimeout);
+    final streamedResponse = await config.httpClient.sendWithTimeout(request, config.readTimeout);
     try {
       if (rangeRequest == null) {
         HttpStatusCodeException.validateCompleteResponse(url, streamedResponse);
       } else {
-        HttpRangeException.validate(
-            url, rangeRequest, HttpRangeResponse.parse(streamedResponse));
+        HttpRangeException.validate(url, rangeRequest, HttpRangeResponse.parse(streamedResponse));
       }
       return DownloadStream(streamedResponse);
     } catch (e) {
@@ -65,8 +61,7 @@ class DownloadStream extends Stream<List<int>> {
   bool _listened = false;
   BaseResponse get baseResponse => _streamedResponse;
 
-  HttpRangeResponse? get responseRange =>
-      HttpRangeResponse.parse(_streamedResponse);
+  HttpRangeResponse? get responseRange => HttpRangeResponse.parse(_streamedResponse);
 
   int? get sourceLength {
     if (baseResponse.headers.containsKey(HttpHeaders.contentRangeHeader)) {

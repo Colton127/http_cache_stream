@@ -5,6 +5,7 @@ import 'package:http_cache_stream/src/models/stream_response/combined_cache_stre
 
 import 'cache_download_stream_response.dart';
 import 'file_stream_response.dart';
+import 'head_stream_response.dart';
 import 'range_download_stream_response.dart';
 
 /// Represents a response from the cache manager.
@@ -24,6 +25,13 @@ abstract class StreamResponse {
 
   /// The total length of the source content, if known.
   int? get sourceLength => sourceHeaders.sourceLength;
+
+  factory StreamResponse.headersOnly(
+    final IntRange range,
+    final CachedResponseHeaders responseHeaders,
+  ) {
+    return HeaderStreamResponse(range, responseHeaders);
+  }
 
   /// Creates a [StreamResponse] from a remote download.
   static Future<StreamResponse> fromDownload(
@@ -49,6 +57,7 @@ abstract class StreamResponse {
     final Stream<List<int>> dataStream,
     final int dataStreamPosition,
     final StreamCacheConfig streamConfig,
+    final CacheFiles cacheFiles,
   ) {
     return CacheDownloadStreamResponse(
       range,
@@ -56,6 +65,7 @@ abstract class StreamResponse {
       dataStream: dataStream,
       dataStreamPosition: dataStreamPosition,
       streamConfig: streamConfig,
+      cacheFiles: cacheFiles,
     );
   }
 
@@ -83,6 +93,7 @@ abstract class StreamResponse {
         dataStream,
         dataStreamPosition,
         streamConfig,
+        cacheFiles,
       );
     } else {
       return CombinedCacheStreamResponse.construct(
@@ -116,6 +127,8 @@ abstract class StreamResponse {
     return contentLength != null && contentLength! < sourceLength!;
   }
 
+  ///If the returned [stream] contains no data.
+  ///This is always true for [HeaderStreamResponse], even if the specified [range] is not empty.
   bool get isEmpty {
     return contentLength == 0;
   }
@@ -129,6 +142,10 @@ abstract class StreamResponse {
 }
 
 enum ResponseSource {
+  ///The response is served exclusively from cached headers
+  /// without any body data. Typically used for HEAD requests.
+  headersOnly,
+
   ///A stream response used to fulfill range requests that exceed [rangeRequestSplitThreshold].
   ///This is an independent download stream from the source URL.
   rangeDownload,

@@ -15,7 +15,7 @@ class StreamRange {
     return StreamRange._(range, sourceLength);
   }
 
-  static StreamRange validate(int? start, int? end, int? sourceLength) {
+  factory StreamRange.construct(int? start, int? end, int? sourceLength) {
     final validatedRange = IntRange.validate(start, end, sourceLength);
     return StreamRange._(validatedRange, sourceLength);
   }
@@ -23,4 +23,7 @@ class StreamRange {
   int get start => range.start;
   int? get end => range.end;
   int? get absoluteEnd => range.end ?? sourceLength;
+
+  @override
+  String toString() => 'StreamRange(start: $start, end: $end, sourceLength: $sourceLength)';
 }

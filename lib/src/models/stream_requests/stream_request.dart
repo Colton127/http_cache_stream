@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:http_cache_stream/http_cache_stream.dart';
 
-class StreamRequest {
+class StreamRequest implements Comparable<StreamRequest> {
   final IntRange range;
   final _responseCompleter = Completer<StreamResponse>();
   StreamRequest(this.range);
@@ -37,4 +37,9 @@ class StreamRequest {
   int? get end => range.end;
   bool get isComplete => _responseCompleter.isCompleted;
   bool get isRangeRequest => range.isFull == false;
+
+  @override
+  int compareTo(StreamRequest other) {
+    return start.compareTo(other.start);
+  }
 }

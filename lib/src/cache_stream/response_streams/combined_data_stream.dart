@@ -2,7 +2,6 @@ import 'dart:async';
 
 import '../../../http_cache_stream.dart';
 import '../../etc/extensions/stream_extensions.dart';
-import '../../models/exceptions/stream_response_exceptions.dart';
 import '../../models/stream_response/stream_response_range.dart';
 import 'buffered_data_stream.dart';
 import 'cache_file_stream.dart';
@@ -30,34 +29,29 @@ class CombinedDataStream extends Stream<List<int>> {
     assert(() {
       final cacheFileSize = cacheFiles.activeCacheFile().statSync().size;
       if (cacheFileSize < dataStreamPosition) {
-        throw StateError(
-            'CombinedDataStream: cacheFileSize ($cacheFileSize) is less than dataStreamPosition ($dataStreamPosition)');
+        throw StateError('CombinedDataStream: cacheFileSize ($cacheFileSize) is less than dataStreamPosition ($dataStreamPosition)');
       }
       return true;
     }());
 
     return CombinedDataStream._(
       CacheFileStream(
-        StreamRange.validate(range.start, dataStreamPosition,
-            sourceLength), //Read upto dataStreamPosition from file
+        StreamRange.construct(range.start, dataStreamPosition, sourceLength), //Read upto dataStreamPosition from file
         cacheFiles,
       ),
       BufferedDataStream(
-        range: StreamRange.validate(dataStreamPosition, range.end,
-            sourceLength), //Read from dataStreamPosition to range.end from data stream
+        range: StreamRange.construct(dataStreamPosition, range.end, sourceLength), //Read from dataStreamPosition to range.end from data stream
         dataStream: dataStream,
         dataStreamPosition: dataStreamPosition,
         streamConfig: streamConfig,
+        cacheFiles: cacheFiles,
       ),
     );
   }
 
   void _start() {
-    void subscribe(
-        {required final Stream<List<int>> stream,
-        required final void Function() onDone}) {
-      assert(_currentSubscription == null,
-          'CombinedCacheStreamResponse: subscribe: _currentSubscription should be null when subscribing to a new stream');
+    void subscribe({required final Stream<List<int>> stream, required final void Function() onDone}) {
+      assert(_currentSubscription == null, 'CombinedCacheStreamResponse: subscribe: _currentSubscription should be null when subscribing to a new stream');
       _currentSubscription = stream.listen(
         _controller.add,
         onError: (e) {

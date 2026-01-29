@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -5,11 +6,10 @@ import 'dart:typed_data';
 class BufferedIOSink {
   final File file;
   BufferedIOSink(this.file, final int start)
-      : _raf = file.openSync(
-          mode: start > 0 ? FileMode.append : FileMode.write,
-        );
+      : _rafFuture = start > 0 ? file.open(mode: FileMode.append) : file.parent.create(recursive: true).then((_) => file.open(mode: FileMode.write));
 
-  final RandomAccessFile _raf;
+  final Future<RandomAccessFile> _rafFuture;
+  RandomAccessFile? _raf;
   final _buffer = BytesBuilder(copy: false);
   int _flushedBytes = 0;
   bool _isClosed = false;
@@ -25,13 +25,18 @@ class BufferedIOSink {
   /// Flushes all buffered data to disk. If new data is added during flushing, it will continue flushing until the buffer is empty.
   /// If an error occurs during flushing, it will be propagated to the caller, and all future flush attempts will rethrow the same error.
   Future<void> flush() {
-    if (_buffer.isEmpty) return _flushFuture ?? Future.value();
-    return _flushFuture ??= () async {
+    if (_flushFuture != null) return _flushFuture!;
+    if (_buffer.isEmpty) Future.value();
+
+    return _flushFuture = () async {
+      final raf = (_raf ??= await _rafFuture);
+
       while (_buffer.isNotEmpty) {
         final bytes = _buffer.takeBytes();
-        await _raf.writeFrom(bytes, 0, bytes.length);
+        await raf.writeFrom(bytes, 0, bytes.length);
         _flushedBytes += bytes.length;
       }
+
       _flushFuture = null;
     }();
   }
@@ -41,16 +46,13 @@ class BufferedIOSink {
     _isClosed = true;
 
     try {
-      if (flushBuffer) {
-        try {
-          await flush();
-        } finally {
-          await _raf.flush();
-        }
+      if (!flushBuffer) {
+        _buffer.clear(); //Discard buffered data
       }
+      await flush(); //Ensure flush completes before closing (even if !flushBuffer, we cannot close while a flush is ongoing)
     } finally {
       _buffer.clear();
-      await _raf.close();
+      await (_raf ?? await _rafFuture).close();
     }
   }
 

@@ -1,3 +1,25 @@
+## 0.0.5
+* Add support for HTTP HEAD requests
+
+* `HttpCacheServer` is no longer considered experimental. 
+
+* Add `cacheFileResolver` callback to `GlobalCacheConfig`.
+
+* Add `serverConfig` parameter to `HttpCacheManager.init` and `HttpCacheManager.createServer`. Provide a `CacheServerConfig` to customize the address and port the cache server uses.
+
+* Add `retryDelay` to cache configuration to specify the delay between retrying downloads.
+
+* Fix potential race condition when modifying cache files
+
+* Queued requests that exceed `readTimeout` are now completed with a `ResponseTimedOutException`.
+
+* Depreciate `cacheDir` and `customHttpClient` parameters in HttpCacheManager.init(). Provide a `GlobalCacheConfig` to set these values.
+
+* Ensure cache directory exists before writing cache files
+
+* Improve exception types/models
+
+
 ## 0.0.4
 * Add `saveAllHeaders` to cache configuration. If false, only essential response headers are saved (defaults to true).
 

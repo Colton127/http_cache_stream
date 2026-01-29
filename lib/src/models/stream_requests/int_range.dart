@@ -39,6 +39,7 @@ class IntRange {
   }
 
   bool get isFull => start == 0 && end == null;
+  bool get isEmpty => start == end;
 
   HttpRangeRequest get rangeRequest => HttpRangeRequest.inclusive(start, end);
 
@@ -46,8 +47,7 @@ class IntRange {
   String toString() => 'IntRange($start, $end)';
 
   @override
-  bool operator ==(Object other) =>
-      other is IntRange && start == other.start && end == other.end;
+  bool operator ==(Object other) => other is IntRange && start == other.start && end == other.end;
 
   @override
   int get hashCode => start.hashCode ^ end.hashCode;

@@ -2,10 +2,8 @@ import 'dart:async';
 
 import 'package:http_cache_stream/http_cache_stream.dart';
 import 'package:http_cache_stream/src/cache_stream/response_streams/download_stream.dart';
-import 'package:http_cache_stream/src/models/exceptions/invalid_cache_exceptions.dart';
 
 import '../../etc/pause_counter.dart';
-import '../../models/exceptions/http_exceptions.dart';
 import 'download_response_listener.dart';
 
 class Downloader {
@@ -23,35 +21,29 @@ class Downloader {
   Future<void> download({
     required final IntRange Function() downloadRange,
     required final void Function(Object e) onError,
-    required final void Function(CachedResponseHeaders responseHeaders)
-        onHeaders,
+    required final void Function(CachedResponseHeaders responseHeaders) onHeaders,
     required final void Function(List<int> data) onData,
   }) async {
     try {
-      void checkActive() {
-        if (!isActive) {
-          throw DownloadStoppedException(sourceUrl);
-        }
-      }
-
       while (isActive) {
         DownloadStream? downloadStream;
         try {
           if (_pauseCounter.isPaused) {
             await _pauseCounter.onResume;
-            checkActive();
+            _checkActive();
           }
           downloadStream = await DownloadStream.open(
             sourceUrl,
             downloadRange(),
             streamConfig,
           );
-          checkActive();
+          if (_pauseCounter.isPaused) {
+            final readTimeout = streamConfig.readTimeout;
+            await _pauseCounter.onResume.timeout(readTimeout, onTimeout: () => throw ReadTimedOutException(sourceUrl, readTimeout));
+          }
+          _checkActive();
           onHeaders(downloadStream.responseHeaders);
-          _done = await (_responseListener = DownloadResponseListener(
-                  sourceUrl, downloadStream, onData, streamConfig))
-              .done
-              .whenComplete(() {});
+          _done = await (_responseListener = DownloadResponseListener(sourceUrl, downloadStream, onData, streamConfig)).done;
           _responseListener = null;
         } catch (e) {
           _responseListener = null;
@@ -62,8 +54,7 @@ class Downloader {
             break;
           } else {
             onError(e);
-            await Future.delayed(
-                const Duration(seconds: 5)); //Wait before retrying
+            await (_pauseCounter.isPaused ? _pauseCounter.onResume : Future.delayed(streamConfig.retryDelay));
           }
         }
       }
@@ -72,17 +63,24 @@ class Downloader {
     }
   }
 
+  void _checkActive() {
+    if (!isActive) {
+      throw CacheDownloadStoppedException(sourceUrl);
+    }
+  }
+
   void close([Object? error]) {
     _closed = true;
     final responseListener = _responseListener;
     if (responseListener != null) {
       _responseListener = null;
-      responseListener.cancel(error ?? DownloadStoppedException(sourceUrl));
+      responseListener.cancel(error ?? CacheDownloadStoppedException(sourceUrl));
     }
     _pauseCounter.resume(force: true); //Break any pauses
   }
 
   void pause() {
+    if (_closed) return;
     _pauseCounter.pause();
     _responseListener?.pause();
   }

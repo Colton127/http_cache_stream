@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http_cache_stream/src/etc/const.dart';
 import 'package:http_cache_stream/src/etc/extensions/file_extensions.dart';
+import 'package:http_cache_stream/src/models/files/cache_file_type.dart';
 import 'package:path/path.dart' as p;
 
 class CacheFiles {

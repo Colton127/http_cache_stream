@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart';
 
 abstract interface class CacheConfiguration {
@@ -9,7 +10,7 @@ abstract interface class CacheConfiguration {
   set requestHeaders(Map<String, String> requestHeaders);
   set responseHeaders(Map<String, String> responseHeaders);
 
-  ///When true, copies [CachedResponseHeaders] to [responseHeaders].
+  ///When true, copies all [CachedResponseHeaders] from the cached response when serving a cached response.
   ///
   ///Default is false.
   bool get copyCachedResponseHeaders;
@@ -44,6 +45,7 @@ abstract interface class CacheConfiguration {
   set minChunkSize(int value);
 
   /// The HTTP client used to download cache.
+  @internal
   Client get httpClient;
 
   /// When false, deletes partial cache files (including metadata) when a http cache stream is disposed before cache is complete.
@@ -64,6 +66,11 @@ abstract interface class CacheConfiguration {
   /// Default is 30 seconds.
   Duration get readTimeout;
   set readTimeout(Duration value);
+
+  /// The delay duration before retrying a failed download.
+  /// Default is 5 seconds.
+  Duration get retryDelay;
+  set retryDelay(Duration value);
 
   ///Whether to save all response headers in the cached response metadata.
   ///

@@ -5,46 +5,30 @@ import 'package:http/http.dart' as http;
 
 import '../http_range/http_range_response.dart';
 
-class DownloadException extends HttpException {
-  DownloadException(Uri uri, String message)
-      : super('Download Exception: $message', uri: uri);
-}
-
-class DownloadStoppedException extends DownloadException {
-  DownloadStoppedException(Uri uri) : super(uri, 'Download stopped');
-}
-
-class RequestTimedOutException extends DownloadException
-    implements TimeoutException {
+class ResponseTimedOutException extends http.ClientException implements TimeoutException {
   @override
   final Duration duration;
-  RequestTimedOutException(Uri uri, this.duration)
-      : super(uri, 'Timed out after $duration');
-
-  @override
-  String toString() {
-    return 'RequestTimedOutException: Request to $uri timed out after $duration';
-  }
+  ResponseTimedOutException(Uri uri, this.duration) : super('Response timed out after $duration', uri);
 }
 
-class ReadTimedOutException extends DownloadException
-    implements TimeoutException {
+class ReadTimedOutException extends http.ClientException implements TimeoutException {
   @override
   final Duration duration;
-  ReadTimedOutException(Uri uri, this.duration)
-      : super(uri, 'Timed out after $duration');
-
-  @override
-  String toString() {
-    return 'ReadTimedOutException: Reading from $uri timed out after $duration';
-  }
+  ReadTimedOutException(Uri uri, this.duration) : super('Read timed out after $duration', uri);
 }
 
-class HttpStatusCodeException extends DownloadException {
-  HttpStatusCodeException(Uri url, int expected, int result)
+class DownloadResponseException extends http.ClientException {
+  final Object originalError;
+  DownloadResponseException(Uri uri, this.originalError) : super('Download response error: $originalError', uri);
+}
+
+class HttpStatusCodeException extends HttpException {
+  final int expected;
+  final int result;
+  HttpStatusCodeException(Uri url, this.expected, this.result)
       : super(
-          url,
           'Invalid HTTP status code | Expected: $expected | Result: $result',
+          uri: url,
         );
 
   static void validate(
