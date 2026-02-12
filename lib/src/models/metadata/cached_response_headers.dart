@@ -256,4 +256,9 @@ class CachedResponseHeaders {
       _headers.forEach(action);
 
   Map<String, String> get headerMap => {..._headers};
+
+  @override
+  String toString() {
+    return 'CachedResponseHeaders{headers: $_headers}';
+  }
 }
