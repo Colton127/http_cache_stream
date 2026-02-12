@@ -82,6 +82,11 @@ class StreamCacheConfig implements CacheConfiguration {
   }
 
   @override
+  Duration get requestTimeout {
+    return _requestTimeout ?? _global.requestTimeout;
+  }
+
+  @override
   bool get saveAllHeaders {
     return _saveAllHeaders ?? _global.saveAllHeaders;
   }
@@ -126,6 +131,11 @@ class StreamCacheConfig implements CacheConfiguration {
   @override
   set readTimeout(Duration value) {
     _readTimeout = value;
+  }
+
+  @override
+  set requestTimeout(Duration value) {
+    _requestTimeout = value;
   }
 
   @override
@@ -183,6 +193,7 @@ class StreamCacheConfig implements CacheConfiguration {
   /// Stream-specific configuration
   bool _useGlobalRangeRequestSplitThreshold = true;
   Duration? _readTimeout;
+  Duration? _requestTimeout;
   bool? _copyCachedResponseHeaders;
   bool? _validateOutdatedCache;
   bool? _savePartialCache;

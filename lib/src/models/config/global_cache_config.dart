@@ -24,6 +24,7 @@ class GlobalCacheConfig implements CacheConfiguration {
     this.saveMetadata = true,
     this.saveAllHeaders = true,
     this.onCacheDone,
+    this.requestTimeout = const Duration(seconds: 30),
     this.readTimeout = const Duration(seconds: 30),
   })  : httpClient = customHttpClient ?? Client(),
         requestHeaders = requestHeaders ?? {},
@@ -96,6 +97,9 @@ class GlobalCacheConfig implements CacheConfiguration {
 
   @override
   Duration readTimeout;
+
+  @override
+  Duration requestTimeout;
 
   @override
   bool saveAllHeaders;

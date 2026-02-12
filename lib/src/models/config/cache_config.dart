@@ -65,6 +65,11 @@ abstract interface class CacheConfiguration {
   Duration get readTimeout;
   set readTimeout(Duration value);
 
+  /// The timeout duration for stream requests. If a response is not received within this duration, the request will be cancelled.
+  /// Default is 30 seconds.
+  Duration get requestTimeout;
+  set requestTimeout(Duration value);
+
   ///Whether to save all response headers in the cached response metadata.
   ///
   ///When false, only essential headers required for cache responses and validation are saved.

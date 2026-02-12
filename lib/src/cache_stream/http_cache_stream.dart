@@ -12,6 +12,7 @@ import 'package:synchronized/synchronized.dart';
 import '../etc/extensions/list_extensions.dart';
 import '../models/exceptions/http_exceptions.dart';
 import '../models/exceptions/invalid_cache_exceptions.dart';
+import '../models/exceptions/stream_response_exceptions.dart';
 import '../models/metadata/cache_metadata.dart';
 import '../models/stream_requests/stream_request.dart';
 import '../models/stream_response/stream_response.dart';
@@ -86,10 +87,21 @@ class HttpCacheStream {
 
     final streamRequest = StreamRequest.construct(range);
     final downloader = _cacheDownloader;
-    if (downloader == null || !downloader.processRequest(streamRequest)) {
+
+    if (downloader != null && downloader.processRequest(streamRequest)) {
+      return streamRequest.response; //Request was processed immediately
+    } else {
       _queuedRequests.add(streamRequest); //Add request to queue
+
+      final requestTimeout = config.requestTimeout;
+      final timeoutTimer = Timer(requestTimeout, () {
+        _queuedRequests.remove(streamRequest);
+        streamRequest
+            .completeError(StreamRequestTimedOutException(requestTimeout));
+      });
+
+      return streamRequest.response.whenComplete(timeoutTimer.cancel);
     }
-    return streamRequest.response;
   }
 
   /// Validates the cache. Returns true if the cache is valid, false if it is not, and null if cache does not exist or is downloading.

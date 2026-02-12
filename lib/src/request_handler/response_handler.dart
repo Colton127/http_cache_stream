@@ -17,7 +17,7 @@ class ResponseHandler {
 
   /// Processes the request and returns a [StreamResponse].
   Future<StreamResponse> getResponse(final HttpCacheStream cacheStream) async {
-    final timeoutTimer = Timer(cacheStream.config.readTimeout, () {
+    final timeoutTimer = Timer(cacheStream.config.requestTimeout, () {
       close(HttpStatus.gatewayTimeout);
     });
 
