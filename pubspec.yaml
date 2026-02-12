@@ -1,6 +1,6 @@
 name: http_cache_stream
 description: "Simultaneously download, cache, and stream remote content. Perfect for media players and any plugin that streams web content."
-version: 0.0.4
+version: 0.0.5
 homepage: https://github.com/Colton127/http_cache_stream
 repository: https://github.com/Colton127/http_cache_stream
 topics:

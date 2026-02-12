@@ -1,3 +1,5 @@
+## 0.0.5 
+
 ## 0.0.4
 * Add `saveAllHeaders` to cache configuration. If false, only essential response headers are saved (defaults to true).
 

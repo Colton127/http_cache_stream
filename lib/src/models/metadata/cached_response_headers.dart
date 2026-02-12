@@ -7,8 +7,8 @@ import 'package:http/http.dart';
 import 'package:http_cache_stream/src/models/http_range/http_range_response.dart';
 
 import '../../etc/mime_types.dart';
+import '../cache_files/cache_files.dart';
 import '../exceptions/http_exceptions.dart';
-import 'cache_files.dart';
 
 @immutable
 class CachedResponseHeaders {

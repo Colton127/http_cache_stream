@@ -6,7 +6,6 @@ import 'package:http_cache_stream/src/cache_server/local_cache_server.dart';
 import 'package:http_cache_stream/src/etc/extensions/uri_extensions.dart';
 
 import '../../http_cache_stream.dart';
-import '../etc/const.dart';
 import '../etc/extensions/future_extensions.dart';
 
 /// Manages the local HTTP server and `HttpCacheStream` instances.

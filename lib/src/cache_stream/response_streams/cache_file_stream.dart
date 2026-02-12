@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import '../../models/metadata/cache_files.dart';
+import '../../models/cache_files/cache_files.dart';
 import '../../models/stream_response/stream_response_range.dart';
 
 class CacheFileStream extends Stream<List<int>> {
