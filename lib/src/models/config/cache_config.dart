@@ -66,7 +66,7 @@ abstract interface class CacheConfiguration {
   set readTimeout(Duration value);
 
   /// The timeout duration for stream requests. If a response is not received within this duration, the request will be cancelled.
-  /// Default is 30 seconds.
+  /// Default is 60 seconds.
   Duration get requestTimeout;
   set requestTimeout(Duration value);
 

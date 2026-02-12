@@ -1,6 +1,6 @@
 ## 0.0.5 
 
-* Add `requestTimeout` to cache configuration. Cache requests that are not fulfilled within this duration are closed with a `StreamRequestTimedOutException`. Defaults to 30 seconds.
+* Add `requestTimeout` to cache configuration. Cache requests that are not fulfilled within this duration are closed with a `StreamRequestTimedOutException`. Defaults to 60 seconds.
 
 * Fix broken links in example project
 

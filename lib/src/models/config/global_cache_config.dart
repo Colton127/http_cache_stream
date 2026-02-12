@@ -24,17 +24,14 @@ class GlobalCacheConfig implements CacheConfiguration {
     this.saveMetadata = true,
     this.saveAllHeaders = true,
     this.onCacheDone,
-    this.requestTimeout = const Duration(seconds: 30),
+    this.requestTimeout = const Duration(seconds: 60),
     this.readTimeout = const Duration(seconds: 30),
   })  : httpClient = customHttpClient ?? Client(),
         requestHeaders = requestHeaders ?? {},
         responseHeaders = responseHeaders ?? {},
-        _maxBufferSize =
-            CacheConfiguration.validateMaxBufferSize(maxBufferSize),
+        _maxBufferSize = CacheConfiguration.validateMaxBufferSize(maxBufferSize),
         _minChunkSize = CacheConfiguration.validateMinChunkSize(minChunkSize),
-        _rangeRequestSplitThreshold =
-            CacheConfiguration.validateRangeRequestSplitThreshold(
-                rangeRequestSplitThreshold);
+        _rangeRequestSplitThreshold = CacheConfiguration.validateRangeRequestSplitThreshold(rangeRequestSplitThreshold);
 
   /// The directory where the cache files will be stored.
   final Directory cacheDirectory;
@@ -71,8 +68,7 @@ class GlobalCacheConfig implements CacheConfiguration {
 
   @override
   set rangeRequestSplitThreshold(int? value) {
-    _rangeRequestSplitThreshold =
-        CacheConfiguration.validateRangeRequestSplitThreshold(value);
+    _rangeRequestSplitThreshold = CacheConfiguration.validateRangeRequestSplitThreshold(value);
   }
 
   int _minChunkSize;
