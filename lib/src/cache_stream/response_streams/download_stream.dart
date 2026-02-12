@@ -26,7 +26,7 @@ class DownloadStream extends Stream<List<int>> {
     }
 
     final streamedResponse =
-        await config.httpClient.sendWithTimeout(request, config.readTimeout);
+        await config.httpClient.sendWithTimeout(request, config.requestTimeout);
     try {
       if (rangeRequest == null) {
         HttpStatusCodeException.validateCompleteResponse(url, streamedResponse);

@@ -46,12 +46,17 @@ class Downloader {
             downloadRange(),
             streamConfig,
           );
+          if (_pauseCounter.isPaused) {
+            final readTimeout = streamConfig.readTimeout;
+            await _pauseCounter.onResume.timeout(readTimeout,
+                onTimeout: () =>
+                    throw ReadTimedOutException(sourceUrl, readTimeout));
+          }
           checkActive();
           onHeaders(downloadStream.responseHeaders);
           _done = await (_responseListener = DownloadResponseListener(
                   sourceUrl, downloadStream, onData, streamConfig))
-              .done
-              .whenComplete(() {});
+              .done;
           _responseListener = null;
         } catch (e) {
           _responseListener = null;
@@ -83,6 +88,7 @@ class Downloader {
   }
 
   void pause() {
+    if (_closed) return;
     _pauseCounter.pause();
     _responseListener?.pause();
   }
