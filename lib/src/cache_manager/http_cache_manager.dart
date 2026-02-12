@@ -123,7 +123,7 @@ class HttpCacheManager {
         final completedCacheFile = File(
           file.path.replaceFirst(CacheFileType.metadata.extension, ''),
         );
-        if (completedCacheFile.existsSync()) {
+        if (await completedCacheFile.exists()) {
           continue; //Do not delete metadata if the cache file exists
         }
       }
