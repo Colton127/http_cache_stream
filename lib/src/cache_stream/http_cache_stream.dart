@@ -7,6 +7,7 @@ import 'package:http_cache_stream/src/models/cache_files/cache_files.dart';
 import 'package:http_cache_stream/src/models/config/stream_cache_config.dart';
 import 'package:http_cache_stream/src/models/metadata/cached_response_headers.dart';
 import 'package:http_cache_stream/src/models/stream_requests/int_range.dart';
+import 'package:synchronized/synchronized.dart';
 
 import '../etc/extensions/list_extensions.dart';
 import '../models/exceptions/http_exceptions.dart';
@@ -41,6 +42,7 @@ class HttpCacheStream {
   Future<bool>? _validateCacheFuture;
   double? _lastProgress; //The last progress value emitted by the stream
   Object? _lastError; //The last error emitted by the stream
+  late final _writeLock = Lock(); //Lock for modifying cache files
   final _disposeCompleter =
       Completer<void>(); //Completer for the dispose future
   CacheMetadata _cacheMetadata; //The metadata for the cache
@@ -237,9 +239,19 @@ class HttpCacheStream {
             if (downloader != null) {
               await downloader.cancel(
                   error); //Allow downloader to complete cleanly. Note that the stream can be retained again during this await.
+              if (isRetained) {
+                return; //Stream was retained again during download cancellation
+              }
+            }
+            if (!config.savePartialCache && progress != 1.0) {
+              await resetCache();
+            } else if (!config.saveMetadata &&
+                progress == 1.0 &&
+                files.metadata.existsSync()) {
+              await _writeLock.synchronized(files.metadata.delete);
             }
           } catch (e) {
-            _addError(e, closeRequests: !isRetained);
+            _addError(e, closeRequests: false);
           } finally {
             if (!_disposeCompleter.isCompleted && !isRetained) {
               _disposeCompleter.complete();
@@ -247,13 +259,6 @@ class HttpCacheStream {
                 _addError(error, closeRequests: true);
               }
               _progressController.close().ignore();
-              if (!config.savePartialCache && progress != 1.0) {
-                files.delete(partialOnly: true).ignore();
-              } else if (!config.saveMetadata &&
-                  progress == 1.0 &&
-                  files.metadata.existsSync()) {
-                files.metadata.delete().ignore();
-              }
             }
           }
         }();
@@ -266,36 +271,48 @@ class HttpCacheStream {
   /// Resets the cache files used by this [HttpCacheStream], interrupting any ongoing download.
   Future<void> resetCache() => _resetCache(CacheResetException(sourceUrl));
 
-  Future<void> _resetCache(final InvalidCacheException exception) async {
+  Future<void> _resetCache(final InvalidCacheException exception) {
     final downloader = _cacheDownloader;
     if (downloader != null && downloader.isActive) {
       return downloader.cancel(
           exception); //Close the ongoing download, which will rethrow the exception and reset the cache
     } else {
-      _cacheMetadata = _cacheMetadata.setHeaders(null);
-      _updateProgressStream(null);
-      if (exception is! CacheResetException) {
-        _addError(exception, closeRequests: false);
-      }
-      await files.delete().catchError((_) => false);
-      if (_queuedRequests.isNotEmpty && !isDownloading && isRetained) {
-        download().ignore(); //Restart download to fulfill pending requests
-      }
+      return _writeLock.synchronized(() async {
+        if (progress != null || metadata.headers != null) {
+          try {
+            _cacheMetadata = _cacheMetadata.setHeaders(null);
+            _updateProgressStream(null);
+            if (exception is! CacheResetException) {
+              _addError(exception, closeRequests: false);
+            }
+            await files.delete(partialOnly: false);
+          } catch (e) {
+            _addError(e, closeRequests: false);
+          } finally {
+            if (_queuedRequests.isNotEmpty && !isDownloading && isRetained) {
+              download()
+                  .ignore(); //Restart download to fulfill pending requests
+            }
+          }
+        }
+      });
     }
   }
 
-  void _setCachedResponseHeaders(CachedResponseHeaders headers) async {
-    try {
-      if (!config.saveAllHeaders) {
-        headers = headers.essentialHeaders();
-      }
-      _cacheMetadata = _cacheMetadata.setHeaders(headers);
-      if (config.saveMetadata || (config.savePartialCache && progress != 1.0)) {
-        await files.metadata.writeAsString(jsonEncode(_cacheMetadata.toJson()));
-      }
-    } catch (e) {
-      _addError(e, closeRequests: false);
+  void _setCachedResponseHeaders(CachedResponseHeaders headers) {
+    if (!config.saveAllHeaders) {
+      headers = headers.essentialHeaders();
     }
+    _cacheMetadata = _cacheMetadata.setHeaders(headers);
+
+    _writeLock.synchronized(() async {
+      try {
+        await files.metadata.parent.create(recursive: true);
+        await files.metadata.writeAsString(jsonEncode(_cacheMetadata.toJson()));
+      } catch (e) {
+        _addError(e, closeRequests: false);
+      }
+    });
   }
 
   double? _calculateCacheProgress() {
