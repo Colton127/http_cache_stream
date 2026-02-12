@@ -1,5 +1,9 @@
 ## 0.0.5 
 
+* Fix broken links in example project
+
+* Fix potential I/O exceptions
+
 ## 0.0.4
 * Add `saveAllHeaders` to cache configuration. If false, only essential response headers are saved (defaults to true).
 
