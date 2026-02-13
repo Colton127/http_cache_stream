@@ -101,7 +101,8 @@ class HttpCacheStream {
     if (downloader != null && downloader.processRequest(streamRequest)) {
       return streamRequest.response; //Request was processed immediately
     } else {
-      _queuedRequests.add(streamRequest); //Add request to queue
+      _queuedRequests
+          .addSorted(streamRequest); //Add request to queue, sorted by range
 
       final requestTimeout = config.requestTimeout;
       final timeoutTimer = Timer(requestTimeout, () {
@@ -225,9 +226,10 @@ class HttpCacheStream {
             }
 
             _updateProgressStream(progress);
-
-            if (_queuedRequests.isEmpty) return;
-            _queuedRequests.removeWhere(downloader.processRequest);
+            while (_queuedRequests.isNotEmpty &&
+                downloader.processRequest(_queuedRequests.first)) {
+              _queuedRequests.removeAt(0);
+            }
           },
           onComplete: () async {
             final completedCacheFile =
