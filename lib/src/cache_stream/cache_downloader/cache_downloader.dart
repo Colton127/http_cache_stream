@@ -235,6 +235,6 @@ class CacheDownloader {
   int get streamPosition => downloadPosition - _pendingStreamBytes;
   int get filePosition => startPosition + _sink.flushedBytes;
   Uri get sourceUrl => _downloader.sourceUrl;
-  bool get isActive => _downloader.isActive;
+  bool get isClosed => _completer.isCompleted;
   CachedResponseHeaders? _cachedHeaders;
 }

@@ -76,8 +76,12 @@ class HttpCacheStream {
     _checkDisposed();
     final range = IntRange.validate(start, end, metadata.sourceLength);
 
-    if (metadata.headers != null && progress == 1.0) {
-      return StreamResponse.fromFile(range, files, metadata.headers!);
+    if (progress == 1.0) {
+      final responseHeaders = metadata.headers;
+      if (responseHeaders != null && await files.complete.exists()) {
+        return StreamResponse.fromFile(range, files, responseHeaders);
+      }
+      _calculateCacheProgress(); //Cache file is missing or metadata is incomplete, recalculate progress
     }
 
     final rangeThreshold = config.rangeRequestSplitThreshold;
@@ -221,6 +225,7 @@ class HttpCacheStream {
             }
 
             _updateProgressStream(progress);
+
             if (_queuedRequests.isEmpty) return;
             _queuedRequests.removeWhere(downloader.processRequest);
           },
@@ -246,8 +251,6 @@ class HttpCacheStream {
           },
         );
       } catch (e) {
-        assert(_cacheDownloader?.isActive == false,
-            'Downloader should not be active after an error');
         _cacheDownloader = null;
         if (e is InvalidCacheException) {
           await _resetCache(e);
@@ -321,7 +324,7 @@ class HttpCacheStream {
 
   Future<void> _resetCache(final InvalidCacheException exception) {
     final downloader = _cacheDownloader;
-    if (downloader != null && downloader.isActive) {
+    if (downloader != null && !downloader.isClosed) {
       return downloader.cancel(
           exception); //Close the ongoing download, which will rethrow the exception and reset the cache
     } else {
@@ -423,7 +426,7 @@ class HttpCacheStream {
   bool get isDisposed => _disposeCompleter.isCompleted;
 
   /// If this [HttpCacheStream] is actively downloading data to cache file.
-  bool get isDownloading => _cacheDownloader?.isActive ?? false;
+  bool get isDownloading => _downloadFuture != null;
 
   /// The current position of the cache file.
   ///
