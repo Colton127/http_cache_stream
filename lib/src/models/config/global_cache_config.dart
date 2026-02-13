@@ -1,9 +1,12 @@
 import 'dart:io';
 
 import 'package:http/http.dart';
-import 'package:http_cache_stream/http_cache_stream.dart';
+import 'package:http_cache_stream/src/models/config/cache_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+
+import '../../cache_stream/http_cache_stream.dart';
+import 'cache_file_resolver.dart';
 
 /// A configuration class for [HttpCacheManager].
 ///
@@ -24,7 +27,9 @@ class GlobalCacheConfig implements CacheConfiguration {
     this.saveMetadata = true,
     this.saveAllHeaders = true,
     this.onCacheDone,
+    this.requestTimeout = const Duration(seconds: 60),
     this.readTimeout = const Duration(seconds: 30),
+    this.cacheFileResolver = defaultCacheFileResolver,
   })  : httpClient = customHttpClient ?? Client(),
         requestHeaders = requestHeaders ?? {},
         responseHeaders = responseHeaders ?? {},
@@ -98,7 +103,15 @@ class GlobalCacheConfig implements CacheConfiguration {
   Duration readTimeout;
 
   @override
+  Duration requestTimeout;
+
+  @override
   bool saveAllHeaders;
+
+  /// A function that takes the cache directory and source URL, and returns a [File] where the cache should be stored.
+  /// This allows for custom file naming and organization strategies. By default, it generates a file path based on the URL structure.
+  /// This function is called for every cache stream, unless if a custom file is provided when creating the cache stream.
+  final CacheFileResolver cacheFileResolver;
 
   /// Callback function fired when a cache stream download is completed.
   void Function(HttpCacheStream cacheStream, File cacheFile)? onCacheDone;

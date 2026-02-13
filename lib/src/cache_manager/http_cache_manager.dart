@@ -6,7 +6,6 @@ import 'package:http_cache_stream/src/cache_server/local_cache_server.dart';
 import 'package:http_cache_stream/src/etc/extensions/uri_extensions.dart';
 
 import '../../http_cache_stream.dart';
-import '../etc/const.dart';
 import '../etc/extensions/future_extensions.dart';
 
 /// Manages the local HTTP server and `HttpCacheStream` instances.
@@ -124,7 +123,7 @@ class HttpCacheManager {
         final completedCacheFile = File(
           file.path.replaceFirst(CacheFileType.metadata.extension, ''),
         );
-        if (completedCacheFile.existsSync()) {
+        if (await completedCacheFile.exists()) {
           continue; //Do not delete metadata if the cache file exists
         }
       }
@@ -199,9 +198,8 @@ class HttpCacheManager {
   }
 
   CacheFiles _resolveCacheFiles(Uri sourceUrl, [File? file]) {
-    return file != null
-        ? CacheFiles.fromFile(file)
-        : CacheFiles.fromUrl(config.cacheDirectory, sourceUrl);
+    file ??= config.cacheFileResolver(config.cacheDirectory, sourceUrl);
+    return CacheFiles.fromFile(file);
   }
 
   ///Create a [StreamCacheConfig] that inherits the current [GlobalCacheConfig]. This config is used to create [HttpCacheStream] instances.

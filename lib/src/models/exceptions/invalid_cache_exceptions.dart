@@ -22,11 +22,13 @@ class CacheSourceChangedException extends InvalidCacheException {
 }
 
 class HttpRangeException extends InvalidCacheException
-    implements HttpException {
+    implements HttpException, RangeError {
+  final HttpRangeRequest request;
+  final HttpRangeResponse? response;
   HttpRangeException(
     Uri uri,
-    HttpRangeRequest request,
-    HttpRangeResponse? response,
+    this.request,
+    this.response,
   ) : super(
           uri,
           'Invalid Download Range Response | Request: $request | Response: $response',
@@ -41,6 +43,27 @@ class HttpRangeException extends InvalidCacheException
       throw HttpRangeException(url, request, response);
     }
   }
+
+  @override
+  num? get invalidValue {
+    if (request.start != response?.start) {
+      return request.start;
+    } else if (request.end != response?.end) {
+      return request.end;
+    } else {
+      return null;
+    }
+  }
+
+  @override
+  String? get name => 'HttpRangeException';
+
+  @override
+  StackTrace? get stackTrace => null;
+  @override
+  num? get start => request.start;
+  @override
+  num? get end => request.end;
 }
 
 class InvalidCacheLengthException extends InvalidCacheException {

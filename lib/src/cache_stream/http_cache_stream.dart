@@ -3,16 +3,19 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http_cache_stream/src/cache_stream/cache_downloader/cache_downloader.dart';
+import 'package:http_cache_stream/src/models/cache_files/cache_files.dart';
 import 'package:http_cache_stream/src/models/config/stream_cache_config.dart';
-import 'package:http_cache_stream/src/models/metadata/cache_files.dart';
 import 'package:http_cache_stream/src/models/metadata/cached_response_headers.dart';
 import 'package:http_cache_stream/src/models/stream_requests/int_range.dart';
+import 'package:synchronized/synchronized.dart';
 
 import '../etc/extensions/list_extensions.dart';
 import '../models/exceptions/http_exceptions.dart';
 import '../models/exceptions/invalid_cache_exceptions.dart';
+import '../models/exceptions/stream_response_exceptions.dart';
 import '../models/metadata/cache_metadata.dart';
 import '../models/stream_requests/stream_request.dart';
+import '../models/stream_response/header_stream_response.dart';
 import '../models/stream_response/stream_response.dart';
 
 /// A stream that handles downloading, caching, and serving content.
@@ -41,6 +44,7 @@ class HttpCacheStream {
   Future<bool>? _validateCacheFuture;
   double? _lastProgress; //The last progress value emitted by the stream
   Object? _lastError; //The last error emitted by the stream
+  late final _writeLock = Lock(); //Lock for modifying cache files
   final _disposeCompleter =
       Completer<void>(); //Completer for the dispose future
   CacheMetadata _cacheMetadata; //The metadata for the cache
@@ -61,13 +65,18 @@ class HttpCacheStream {
   /// If [start] or [end] are null, they default to the beginning and end
   /// of the file respectively.
   Future<StreamResponse> request({final int? start, final int? end}) async {
+    if (end != null && start == end) {
+      return head(
+          start: start,
+          end: end); //Requested range is empty, return only headers
+    }
     if (_validateCacheFuture != null) {
       await _validateCacheFuture!;
     }
     _checkDisposed();
     final range = IntRange.validate(start, end, metadata.sourceLength);
 
-    if (metadata.headers != null && progress == 1.0) {
+    if (isCached) {
       return StreamResponse.fromFile(range, files, metadata.headers!);
     }
 
@@ -84,10 +93,22 @@ class HttpCacheStream {
 
     final streamRequest = StreamRequest.construct(range);
     final downloader = _cacheDownloader;
-    if (downloader == null || !downloader.processRequest(streamRequest)) {
-      _queuedRequests.add(streamRequest); //Add request to queue
+
+    if (downloader != null && downloader.processRequest(streamRequest)) {
+      return streamRequest.response; //Request was processed immediately
+    } else {
+      _queuedRequests
+          .addSorted(streamRequest); //Add request to queue, sorted by range
+
+      final requestTimeout = config.requestTimeout;
+      final timeoutTimer = Timer(requestTimeout, () {
+        _queuedRequests.remove(streamRequest);
+        streamRequest
+            .completeError(StreamRequestTimedOutException(requestTimeout));
+      });
+
+      return streamRequest.response.whenComplete(timeoutTimer.cancel);
     }
-    return streamRequest.response;
   }
 
   /// Validates the cache. Returns true if the cache is valid, false if it is not, and null if cache does not exist or is downloading.
@@ -101,33 +122,66 @@ class HttpCacheStream {
     if (_validateCacheFuture != null) {
       return _validateCacheFuture;
     }
+    _checkDisposed();
     if (isDownloading || !cacheFile.existsSync()) {
       return null; //Cache does not exist or is downloading
     }
     final currentHeaders =
         metadata.headers ?? CachedResponseHeaders.fromFile(cacheFile)!;
     if (!force && currentHeaders.shouldRevalidate() == false) return true;
-    _validateCacheFuture = CachedResponseHeaders.fromUrl(
-      sourceUrl,
-      httpClient: config.httpClient,
-      requestHeaders: config.combinedRequestHeaders(),
-    ).then((latestHeaders) async {
-      if (CachedResponseHeaders.validateCacheResponse(
-              currentHeaders, latestHeaders) ==
-          true) {
-        _setCachedResponseHeaders(latestHeaders);
-        return true;
-      } else {
-        if (resetInvalid) {
-          await _resetCache(CacheSourceChangedException(sourceUrl));
+
+    return _validateCacheFuture = () async {
+      try {
+        final latestHeaders = await CachedResponseHeaders.fromUrl(
+          sourceUrl,
+          httpClient: config.httpClient,
+          requestHeaders: config.combinedRequestHeaders(),
+        ).timeout(config.requestTimeout);
+
+        if (CachedResponseHeaders.validateCacheResponse(
+                currentHeaders, latestHeaders) ==
+            true) {
+          _setCachedResponseHeaders(latestHeaders);
+          return true;
+        } else {
+          if (resetInvalid) {
+            await _resetCache(CacheSourceChangedException(sourceUrl));
+          }
+          return false;
         }
-        return false;
+      } catch (e) {
+        _addError(e, closeRequests: false);
+        rethrow;
+      } finally {
+        _validateCacheFuture = null;
+        _calculateCacheProgress();
       }
-    }).whenComplete(() {
-      _validateCacheFuture = null;
-      _calculateCacheProgress();
-    });
-    return _validateCacheFuture;
+    }();
+  }
+
+  /// Requests only the headers for the given byte range.
+  Future<HeaderStreamResponse> head({final int? start, final int? end}) async {
+    if (_validateCacheFuture != null) {
+      await _validateCacheFuture!;
+    }
+    _checkDisposed();
+
+    final responseHeaders = metadata.headers ??
+        await CachedResponseHeaders.fromUrl(
+          sourceUrl,
+          httpClient: config.httpClient,
+          requestHeaders: config.combinedRequestHeaders(),
+        ).then((headers) {
+          _setCachedResponseHeaders(headers);
+          return headers;
+        }).timeout(
+          config.requestTimeout,
+          onTimeout: () =>
+              throw StreamRequestTimedOutException(config.requestTimeout),
+        );
+
+    final range = IntRange.validate(start, end, responseHeaders.sourceLength);
+    return HeaderStreamResponse(range, responseHeaders);
   }
 
   /// Downloads and returns [cacheFile]. If the file already exists, returns immediately. If a download is already in progress, returns the same future.
@@ -171,8 +225,10 @@ class HttpCacheStream {
             }
 
             _updateProgressStream(progress);
-            if (_queuedRequests.isEmpty) return;
-            _queuedRequests.removeWhere(downloader.processRequest);
+            while (_queuedRequests.isNotEmpty &&
+                downloader.processRequest(_queuedRequests.first)) {
+              _queuedRequests.removeAt(0);
+            }
           },
           onComplete: () async {
             final completedCacheFile =
@@ -196,8 +252,6 @@ class HttpCacheStream {
           },
         );
       } catch (e) {
-        assert(_cacheDownloader?.isActive == false,
-            'Downloader should not be active after an error');
         _cacheDownloader = null;
         if (e is InvalidCacheException) {
           await _resetCache(e);
@@ -237,9 +291,19 @@ class HttpCacheStream {
             if (downloader != null) {
               await downloader.cancel(
                   error); //Allow downloader to complete cleanly. Note that the stream can be retained again during this await.
+              if (isRetained) {
+                return; //Stream was retained again during download cancellation
+              }
+            }
+            if (!config.savePartialCache && progress != 1.0) {
+              await resetCache();
+            } else if (!config.saveMetadata &&
+                progress == 1.0 &&
+                files.metadata.existsSync()) {
+              await _writeLock.synchronized(files.metadata.delete);
             }
           } catch (e) {
-            _addError(e, closeRequests: !isRetained);
+            _addError(e, closeRequests: false);
           } finally {
             if (!_disposeCompleter.isCompleted && !isRetained) {
               _disposeCompleter.complete();
@@ -247,13 +311,6 @@ class HttpCacheStream {
                 _addError(error, closeRequests: true);
               }
               _progressController.close().ignore();
-              if (!config.savePartialCache && progress != 1.0) {
-                files.delete(partialOnly: true).ignore();
-              } else if (!config.saveMetadata &&
-                  progress == 1.0 &&
-                  files.metadata.existsSync()) {
-                files.metadata.delete().ignore();
-              }
             }
           }
         }();
@@ -266,36 +323,48 @@ class HttpCacheStream {
   /// Resets the cache files used by this [HttpCacheStream], interrupting any ongoing download.
   Future<void> resetCache() => _resetCache(CacheResetException(sourceUrl));
 
-  Future<void> _resetCache(final InvalidCacheException exception) async {
+  Future<void> _resetCache(final InvalidCacheException exception) {
     final downloader = _cacheDownloader;
-    if (downloader != null && downloader.isActive) {
+    if (downloader != null && !downloader.isClosed) {
       return downloader.cancel(
           exception); //Close the ongoing download, which will rethrow the exception and reset the cache
     } else {
-      _cacheMetadata = _cacheMetadata.setHeaders(null);
-      _updateProgressStream(null);
-      if (exception is! CacheResetException) {
-        _addError(exception, closeRequests: false);
-      }
-      await files.delete().catchError((_) => false);
-      if (_queuedRequests.isNotEmpty && !isDownloading && isRetained) {
-        download().ignore(); //Restart download to fulfill pending requests
-      }
+      return _writeLock.synchronized(() async {
+        if (progress != null || metadata.headers != null) {
+          try {
+            _cacheMetadata = _cacheMetadata.setHeaders(null);
+            _updateProgressStream(null);
+            if (exception is! CacheResetException) {
+              _addError(exception, closeRequests: false);
+            }
+            await files.delete(partialOnly: false);
+          } catch (e) {
+            _addError(e, closeRequests: false);
+          } finally {
+            if (_queuedRequests.isNotEmpty && !isDownloading && isRetained) {
+              download()
+                  .ignore(); //Restart download to fulfill pending requests
+            }
+          }
+        }
+      });
     }
   }
 
-  void _setCachedResponseHeaders(CachedResponseHeaders headers) async {
-    try {
-      if (!config.saveAllHeaders) {
-        headers = headers.essentialHeaders();
-      }
-      _cacheMetadata = _cacheMetadata.setHeaders(headers);
-      if (config.saveMetadata || (config.savePartialCache && progress != 1.0)) {
-        await files.metadata.writeAsString(jsonEncode(_cacheMetadata.toJson()));
-      }
-    } catch (e) {
-      _addError(e, closeRequests: false);
+  void _setCachedResponseHeaders(CachedResponseHeaders headers) {
+    if (!config.saveAllHeaders) {
+      headers = headers.essentialHeaders();
     }
+    _cacheMetadata = _cacheMetadata.setHeaders(headers);
+
+    _writeLock.synchronized(() async {
+      try {
+        await files.metadata.parent.create(recursive: true);
+        await files.metadata.writeAsString(jsonEncode(_cacheMetadata.toJson()));
+      } catch (e) {
+        _addError(e, closeRequests: false);
+      }
+    });
   }
 
   double? _calculateCacheProgress() {
@@ -351,14 +420,22 @@ class HttpCacheStream {
   /// To get the latest progress value use the [progress] property.
   Stream<double?> get progressStream => _progressController.stream;
 
-  /// Returns true if the cache file exists.
-  bool get isCached => cacheFile.existsSync();
+  /// Returns true if the complete cache file and response headers exist. This indicates that the cache is fully available.
+  bool get isCached {
+    if (progress == 1.0) {
+      if (metadata.headers != null && cacheFile.existsSync()) {
+        return true;
+      }
+      _calculateCacheProgress(); //Cache file is missing or metadata is incomplete, recalculate progress
+    }
+    return false;
+  }
 
   /// If this [HttpCacheStream] has been disposed. A disposed stream cannot be used.
   bool get isDisposed => _disposeCompleter.isCompleted;
 
   /// If this [HttpCacheStream] is actively downloading data to cache file.
-  bool get isDownloading => _cacheDownloader?.isActive ?? false;
+  bool get isDownloading => _downloadFuture != null;
 
   /// The current position of the cache file.
   ///

@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:http_cache_stream/http_cache_stream.dart';
 import 'package:http_cache_stream/src/cache_stream/cache_downloader/buffered_io_sink.dart';
+import 'package:http_cache_stream/src/etc/extensions/file_extensions.dart';
 import 'package:http_cache_stream/src/etc/extensions/list_extensions.dart';
 import 'package:http_cache_stream/src/models/exceptions/invalid_cache_exceptions.dart';
 import 'package:http_cache_stream/src/models/stream_requests/stream_request.dart';
@@ -30,8 +30,12 @@ class CacheDownloader {
     final StreamCacheConfig cacheConfig,
   ) {
     final partialCacheFile = cacheMetadata.partialCacheFile;
-    final startPosition = _startPosition(cacheMetadata.partialCacheFile,
-        cacheMetadata.headers?.canResumeDownload() == true);
+    int startPosition = 0;
+
+    if (cacheMetadata.headers?.canResumeDownload() == true) {
+      startPosition = partialCacheFile.lengthSyncOrNull() ?? 0;
+    }
+
     return CacheDownloader._(
       cacheMetadata,
       startPosition,
@@ -96,8 +100,8 @@ class CacheDownloader {
         .catchError(onError, test: (e) => e is! InvalidCacheException)
         .then(
       (_) async {
-        await _sink.close(
-            flushBuffer: true); //Flushes all buffered data and closes the sink
+        await _sink.close(flushBuffer: true).catchError(
+            onError); //Flushes all buffered data and closes the sink
         final partialCacheLength = (await _sink.file.stat()).size;
         final sourceLength = _cachedHeaders?.sourceLength ??
             (_downloader.isDone ? downloadPosition : null);
@@ -231,19 +235,6 @@ class CacheDownloader {
   int get streamPosition => downloadPosition - _pendingStreamBytes;
   int get filePosition => startPosition + _sink.flushedBytes;
   Uri get sourceUrl => _downloader.sourceUrl;
-  bool get isActive => _downloader.isActive;
+  bool get isClosed => _completer.isCompleted;
   CachedResponseHeaders? _cachedHeaders;
-}
-
-int _startPosition(final File partialCacheFile, final bool canResumeDownload) {
-  if (canResumeDownload) {
-    final partialCacheStat = partialCacheFile.statSync();
-    if (partialCacheStat.type == FileSystemEntityType.file &&
-        partialCacheStat.size >= 0) {
-      return partialCacheStat.size;
-    }
-  }
-
-  partialCacheFile.parent.createSync(recursive: true); //Ensure directory exists
-  return 0; //BufferedIOSink Will (re)create the file
 }

@@ -8,3 +8,16 @@ extension ListExtensions<T> on List<T> {
     }
   }
 }
+
+extension SortedListExtensions<T extends Comparable<T>> on List<T> {
+  void addSorted(T value) {
+    for (int i = 0; i < length; i++) {
+      if (value.compareTo(this[i]) < 0) {
+        insert(i, value);
+        return;
+      }
+    }
+
+    add(value);
+  }
+}

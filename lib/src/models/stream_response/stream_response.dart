@@ -5,6 +5,7 @@ import 'package:http_cache_stream/src/models/stream_response/combined_cache_stre
 
 import 'cache_download_stream_response.dart';
 import 'file_stream_response.dart';
+import 'header_stream_response.dart';
 import 'range_download_stream_response.dart';
 
 /// Represents a response from the cache manager.
@@ -24,6 +25,13 @@ abstract class StreamResponse {
 
   /// The total length of the source content, if known.
   int? get sourceLength => sourceHeaders.sourceLength;
+
+  factory StreamResponse.headersOnly(
+    final IntRange range,
+    final CachedResponseHeaders responseHeaders,
+  ) {
+    return HeaderStreamResponse(range, responseHeaders);
+  }
 
   /// Creates a [StreamResponse] from a remote download.
   static Future<StreamResponse> fromDownload(
@@ -112,12 +120,14 @@ abstract class StreamResponse {
     return range.start;
   }
 
-  bool get isPartial {
-    return contentLength != null && contentLength! < sourceLength!;
+  bool get isPartial => !isFull;
+
+  bool get isFull {
+    return range.start == 0 && (range.end == null || range.end == sourceLength);
   }
 
   bool get isEmpty {
-    return contentLength == 0;
+    return effectiveStart == effectiveEnd;
   }
 
   void cancel();
@@ -129,6 +139,10 @@ abstract class StreamResponse {
 }
 
 enum ResponseSource {
+  /// A [StreamResponse] that contains an empty data stream
+  /// Typically used to complete HEAD requests, where no body data is expected.
+  headerOnly,
+
   ///A stream response used to fulfill range requests that exceed [rangeRequestSplitThreshold].
   ///This is an independent download stream from the source URL.
   rangeDownload,

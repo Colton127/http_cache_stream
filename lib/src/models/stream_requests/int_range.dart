@@ -1,7 +1,7 @@
 import 'package:http_cache_stream/src/models/http_range/http_range_request.dart';
 
 ///A class that represents a range of exclusive integers
-class IntRange {
+class IntRange implements Comparable<IntRange> {
   final int start;
   final int? end;
   const IntRange([this.start = 0, this.end]) : upperBound = end ?? start;
@@ -41,6 +41,20 @@ class IntRange {
   bool get isFull => start == 0 && end == null;
 
   HttpRangeRequest get rangeRequest => HttpRangeRequest.inclusive(start, end);
+
+  @override
+  int compareTo(IntRange other) {
+    if (start != other.start) {
+      return start.compareTo(other.start);
+    }
+    if (end == null) {
+      return other.end == null ? 0 : 1;
+    }
+    if (other.end == null) {
+      return -1;
+    }
+    return end!.compareTo(other.end!);
+  }
 
   @override
   String toString() => 'IntRange($start, $end)';

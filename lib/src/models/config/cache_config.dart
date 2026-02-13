@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart';
 
 abstract interface class CacheConfiguration {
@@ -44,6 +45,7 @@ abstract interface class CacheConfiguration {
   set minChunkSize(int value);
 
   /// The HTTP client used to download cache.
+  @internal
   Client get httpClient;
 
   /// When false, deletes partial cache files (including metadata) when a http cache stream is disposed before cache is complete.
@@ -64,6 +66,11 @@ abstract interface class CacheConfiguration {
   /// Default is 30 seconds.
   Duration get readTimeout;
   set readTimeout(Duration value);
+
+  /// The timeout duration for stream requests. If a response is not received within this duration, the request will be cancelled.
+  /// Default is 60 seconds.
+  Duration get requestTimeout;
+  set requestTimeout(Duration value);
 
   ///Whether to save all response headers in the cached response metadata.
   ///
@@ -87,6 +94,10 @@ abstract interface class CacheConfiguration {
   }
 
   static int validateMinChunkSize(int value) {
-    return RangeError.checkNotNegative(value, 'minChunkSize');
+    const minValue = 1024 * 8; // 8KB
+    if (value < minValue) {
+      throw RangeError.range(value, minValue, null, 'minChunkSize');
+    }
+    return value;
   }
 }

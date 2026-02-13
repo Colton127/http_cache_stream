@@ -1,3 +1,14 @@
+## 0.0.5 
+* Add support for HTTP HEAD requests
+
+* Add `cacheFileResolver` to global cache configuration. This function is used to determine the output cache file path when a stream is created.
+
+* Add `requestTimeout` to cache configuration. Cache requests that are not fulfilled within this duration are closed with a `StreamRequestTimedOutException`. Defaults to 60 seconds.
+
+* Fix broken links in example project
+
+* Fix potential I/O exceptions
+
 ## 0.0.4
 * Add `saveAllHeaders` to cache configuration. If false, only essential response headers are saved (defaults to true).
 

@@ -61,7 +61,7 @@ class _Body extends StatelessWidget {
           'audioplayers',
           AudioPlayersExample(
             Uri.parse(
-              'https://dovetail.prxu.org/70/66673fd4-6851-4b90-a762-7c0538c76626/CoryCombs_2021T_VO_Intro.mp3',
+              'https://s3.amazonaws.com/scifri-episodes/scifri20181123-episode.mp3',
             ),
           ),
         ),
@@ -77,7 +77,7 @@ class _Body extends StatelessWidget {
           'video_player',
           VideoPlayerExample(
             Uri.parse(
-              'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+              'https://flutter.github.io/assets-for-api-docs/assets/videos/butterfly.mp4',
             ),
           ),
         ),
@@ -91,7 +91,7 @@ class _Body extends StatelessWidget {
           'Pre-Cache URL',
           PreCacheUrl(
             Uri.parse(
-              'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+              'https://flutter.github.io/assets-for-api-docs/assets/videos/butterfly.mp4',
             ),
           ),
         ),
