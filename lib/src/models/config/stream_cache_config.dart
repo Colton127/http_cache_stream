@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart';
 import 'package:http_cache_stream/http_cache_stream.dart';
 
@@ -167,6 +168,7 @@ class StreamCacheConfig implements CacheConfiguration {
   /// and written to disk.
   ///
   /// To register a callback, use [onCacheDone].
+  @internal
   void onCacheComplete(HttpCacheStream stream, File cacheFile) {
     onCacheDone?.call(cacheFile);
     _global.onCacheDone?.call(stream, cacheFile);

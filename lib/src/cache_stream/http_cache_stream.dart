@@ -76,12 +76,8 @@ class HttpCacheStream {
     _checkDisposed();
     final range = IntRange.validate(start, end, metadata.sourceLength);
 
-    if (progress == 1.0) {
-      final responseHeaders = metadata.headers;
-      if (responseHeaders != null && await files.complete.exists()) {
-        return StreamResponse.fromFile(range, files, responseHeaders);
-      }
-      _calculateCacheProgress(); //Cache file is missing or metadata is incomplete, recalculate progress
+    if (isCached) {
+      return StreamResponse.fromFile(range, files, metadata.headers!);
     }
 
     final rangeThreshold = config.rangeRequestSplitThreshold;
@@ -175,7 +171,10 @@ class HttpCacheStream {
           sourceUrl,
           httpClient: config.httpClient,
           requestHeaders: config.combinedRequestHeaders(),
-        ).timeout(
+        ).then((headers) {
+          _setCachedResponseHeaders(headers);
+          return headers;
+        }).timeout(
           config.requestTimeout,
           onTimeout: () =>
               throw StreamRequestTimedOutException(config.requestTimeout),
@@ -421,8 +420,16 @@ class HttpCacheStream {
   /// To get the latest progress value use the [progress] property.
   Stream<double?> get progressStream => _progressController.stream;
 
-  /// Returns true if the cache file exists.
-  bool get isCached => cacheFile.existsSync();
+  /// Returns true if the complete cache file and response headers exist. This indicates that the cache is fully available.
+  bool get isCached {
+    if (progress == 1.0) {
+      if (metadata.headers != null && cacheFile.existsSync()) {
+        return true;
+      }
+      _calculateCacheProgress(); //Cache file is missing or metadata is incomplete, recalculate progress
+    }
+    return false;
+  }
 
   /// If this [HttpCacheStream] has been disposed. A disposed stream cannot be used.
   bool get isDisposed => _disposeCompleter.isCompleted;

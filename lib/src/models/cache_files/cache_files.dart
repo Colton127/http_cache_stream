@@ -18,6 +18,16 @@ class CacheFiles {
     required this.metadata,
   });
 
+  ///Creates a [CacheFiles] instance from the given [file]. The file can be a complete, partial, or metadata cache file.
+  factory CacheFiles.fromFile(final File file) {
+    final completeFile = CacheFileType.completeFile(file);
+    return CacheFiles._(
+      complete: completeFile,
+      partial: CacheFileType.partialFile(completeFile),
+      metadata: CacheFileType.metaDataFile(completeFile),
+    );
+  }
+
   List<String> get paths => [complete.path, partial.path, metadata.path];
   Directory get directory => complete.parent;
 
@@ -48,16 +58,6 @@ class CacheFiles {
       }
     }
     return deleted;
-  }
-
-  ///Creates a [CacheFiles] instance from the given [file]. The file can be a complete, partial, or metadata cache file.
-  factory CacheFiles.fromFile(final File file) {
-    final completeFile = CacheFileType.completeFile(file);
-    return CacheFiles._(
-      complete: completeFile,
-      partial: CacheFileType.partialFile(completeFile),
-      metadata: CacheFileType.metaDataFile(completeFile),
-    );
   }
 
   @override
