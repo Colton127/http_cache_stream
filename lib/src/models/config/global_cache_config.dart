@@ -1,10 +1,11 @@
 import 'dart:io';
 
 import 'package:http/http.dart';
-import 'package:http_cache_stream/http_cache_stream.dart';
+import 'package:http_cache_stream/src/models/config/cache_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../../cache_stream/http_cache_stream.dart';
 import 'cache_file_resolver.dart';
 
 /// A configuration class for [HttpCacheManager].

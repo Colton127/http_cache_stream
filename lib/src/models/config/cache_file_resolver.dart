@@ -39,9 +39,9 @@ File defaultCacheFileResolver(Directory cacheDirectory, Uri sourceUrl) {
     return outputFile;
   } catch (e) {
     if (kDebugMode) print('Error generating default file path: $e');
+    //Fallback to a hash-based file name if the above fails
+    return hashCacheFileResolver(cacheDirectory, sourceUrl);
   }
-  //Fallback to a hash-based file name if the above fails
-  return hashCacheFileResolver(cacheDirectory, sourceUrl);
 }
 
 File hashCacheFileResolver(Directory cacheDirectory, Uri url) {

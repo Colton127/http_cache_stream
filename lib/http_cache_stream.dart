@@ -19,6 +19,7 @@ export 'src/cache_stream/http_cache_stream.dart';
 export 'src/models/cache_files/cache_file_type.dart';
 export 'src/models/cache_files/cache_files.dart';
 export 'src/models/config/cache_config.dart';
+export 'src/models/config/cache_file_resolver.dart';
 export 'src/models/config/global_cache_config.dart';
 export 'src/models/config/stream_cache_config.dart';
 export 'src/models/metadata/cache_metadata.dart';
