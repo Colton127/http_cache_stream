@@ -192,8 +192,7 @@ class CachedResponseHeaders {
       };
     }
     final response = await (httpClient?.head(url, headers: requestHeaders) ??
-            http.head(url, headers: requestHeaders))
-        .timeout(const Duration(seconds: 15));
+        http.head(url, headers: requestHeaders));
     if (response.statusCode != HttpStatus.ok &&
         response.statusCode != HttpStatus.partialContent) {
       throw HttpStatusCodeException(url, HttpStatus.ok, response.statusCode);

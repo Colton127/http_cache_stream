@@ -15,6 +15,7 @@ import '../models/exceptions/invalid_cache_exceptions.dart';
 import '../models/exceptions/stream_response_exceptions.dart';
 import '../models/metadata/cache_metadata.dart';
 import '../models/stream_requests/stream_request.dart';
+import '../models/stream_response/header_stream_response.dart';
 import '../models/stream_response/stream_response.dart';
 
 /// A stream that handles downloading, caching, and serving content.
@@ -64,6 +65,11 @@ class HttpCacheStream {
   /// If [start] or [end] are null, they default to the beginning and end
   /// of the file respectively.
   Future<StreamResponse> request({final int? start, final int? end}) async {
+    if (end != null && start == end) {
+      return head(
+          start: start,
+          end: end); //Requested range is empty, return only headers
+    }
     if (_validateCacheFuture != null) {
       await _validateCacheFuture!;
     }
@@ -115,33 +121,63 @@ class HttpCacheStream {
     if (_validateCacheFuture != null) {
       return _validateCacheFuture;
     }
+    _checkDisposed();
     if (isDownloading || !cacheFile.existsSync()) {
       return null; //Cache does not exist or is downloading
     }
     final currentHeaders =
         metadata.headers ?? CachedResponseHeaders.fromFile(cacheFile)!;
     if (!force && currentHeaders.shouldRevalidate() == false) return true;
-    _validateCacheFuture = CachedResponseHeaders.fromUrl(
-      sourceUrl,
-      httpClient: config.httpClient,
-      requestHeaders: config.combinedRequestHeaders(),
-    ).then((latestHeaders) async {
-      if (CachedResponseHeaders.validateCacheResponse(
-              currentHeaders, latestHeaders) ==
-          true) {
-        _setCachedResponseHeaders(latestHeaders);
-        return true;
-      } else {
-        if (resetInvalid) {
-          await _resetCache(CacheSourceChangedException(sourceUrl));
+
+    return _validateCacheFuture = () async {
+      try {
+        final latestHeaders = await CachedResponseHeaders.fromUrl(
+          sourceUrl,
+          httpClient: config.httpClient,
+          requestHeaders: config.combinedRequestHeaders(),
+        ).timeout(config.requestTimeout);
+
+        if (CachedResponseHeaders.validateCacheResponse(
+                currentHeaders, latestHeaders) ==
+            true) {
+          _setCachedResponseHeaders(latestHeaders);
+          return true;
+        } else {
+          if (resetInvalid) {
+            await _resetCache(CacheSourceChangedException(sourceUrl));
+          }
+          return false;
         }
-        return false;
+      } catch (e) {
+        _addError(e, closeRequests: false);
+        rethrow;
+      } finally {
+        _validateCacheFuture = null;
+        _calculateCacheProgress();
       }
-    }).whenComplete(() {
-      _validateCacheFuture = null;
-      _calculateCacheProgress();
-    });
-    return _validateCacheFuture;
+    }();
+  }
+
+  /// Requests only the headers for the given byte range.
+  Future<HeaderStreamResponse> head({final int? start, final int? end}) async {
+    if (_validateCacheFuture != null) {
+      await _validateCacheFuture!;
+    }
+    _checkDisposed();
+
+    final responseHeaders = metadata.headers ??
+        await CachedResponseHeaders.fromUrl(
+          sourceUrl,
+          httpClient: config.httpClient,
+          requestHeaders: config.combinedRequestHeaders(),
+        ).timeout(
+          config.requestTimeout,
+          onTimeout: () =>
+              throw StreamRequestTimedOutException(config.requestTimeout),
+        );
+
+    final range = IntRange.validate(start, end, responseHeaders.sourceLength);
+    return HeaderStreamResponse(range, responseHeaders);
   }
 
   /// Downloads and returns [cacheFile]. If the file already exists, returns immediately. If a download is already in progress, returns the same future.

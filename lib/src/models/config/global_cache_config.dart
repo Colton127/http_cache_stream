@@ -29,9 +29,12 @@ class GlobalCacheConfig implements CacheConfiguration {
   })  : httpClient = customHttpClient ?? Client(),
         requestHeaders = requestHeaders ?? {},
         responseHeaders = responseHeaders ?? {},
-        _maxBufferSize = CacheConfiguration.validateMaxBufferSize(maxBufferSize),
+        _maxBufferSize =
+            CacheConfiguration.validateMaxBufferSize(maxBufferSize),
         _minChunkSize = CacheConfiguration.validateMinChunkSize(minChunkSize),
-        _rangeRequestSplitThreshold = CacheConfiguration.validateRangeRequestSplitThreshold(rangeRequestSplitThreshold);
+        _rangeRequestSplitThreshold =
+            CacheConfiguration.validateRangeRequestSplitThreshold(
+                rangeRequestSplitThreshold);
 
   /// The directory where the cache files will be stored.
   final Directory cacheDirectory;
@@ -68,7 +71,8 @@ class GlobalCacheConfig implements CacheConfiguration {
 
   @override
   set rangeRequestSplitThreshold(int? value) {
-    _rangeRequestSplitThreshold = CacheConfiguration.validateRangeRequestSplitThreshold(value);
+    _rangeRequestSplitThreshold =
+        CacheConfiguration.validateRangeRequestSplitThreshold(value);
   }
 
   int _minChunkSize;

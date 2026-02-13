@@ -23,11 +23,7 @@ class LocalCacheServer {
       (request) async {
         final requestHandler = RequestHandler(request);
         try {
-          if (request.method != 'GET') {
-            requestHandler.close(HttpStatus.methodNotAllowed);
-          } else {
-            await processRequest(requestHandler);
-          }
+          await processRequest(requestHandler);
         } catch (_) {
           requestHandler.close(HttpStatus.internalServerError);
         } finally {
