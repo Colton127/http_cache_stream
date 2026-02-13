@@ -198,9 +198,8 @@ class HttpCacheManager {
   }
 
   CacheFiles _resolveCacheFiles(Uri sourceUrl, [File? file]) {
-    return file != null
-        ? CacheFiles.fromFile(file)
-        : CacheFiles.fromUrl(config.cacheDirectory, sourceUrl);
+    file ??= config.cacheFileResolver(config.cacheDirectory, sourceUrl);
+    return CacheFiles.fromFile(file);
   }
 
   ///Create a [StreamCacheConfig] that inherits the current [GlobalCacheConfig]. This config is used to create [HttpCacheStream] instances.

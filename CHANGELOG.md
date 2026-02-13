@@ -1,6 +1,8 @@
 ## 0.0.5 
 * Add support for HTTP HEAD requests
 
+* Add `cacheFileResolver` to global cache configuration
+
 * Add `requestTimeout` to cache configuration. Cache requests that are not fulfilled within this duration are closed with a `StreamRequestTimedOutException`. Defaults to 60 seconds.
 
 * Fix broken links in example project
