@@ -24,8 +24,8 @@ class LocalCacheServer {
         final requestHandler = RequestHandler(request);
         try {
           await processRequest(requestHandler);
-        } catch (_) {
-          requestHandler.close(HttpStatus.internalServerError);
+        } catch (e) {
+          requestHandler.closeWithError(e);
         } finally {
           assert(requestHandler.isClosed,
               'RequestHandler should be closed after processing the request');

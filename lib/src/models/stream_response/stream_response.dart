@@ -120,12 +120,14 @@ abstract class StreamResponse {
     return range.start;
   }
 
-  bool get isPartial {
-    return contentLength != null && contentLength! < sourceLength!;
+  bool get isPartial => !isFull;
+
+  bool get isFull {
+    return range.start == 0 && (range.end == null || range.end == sourceLength);
   }
 
   bool get isEmpty {
-    return contentLength == 0;
+    return effectiveStart == effectiveEnd;
   }
 
   void cancel();
