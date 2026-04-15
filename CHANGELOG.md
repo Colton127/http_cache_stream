@@ -1,5 +1,4 @@
 ## 0.0.6
-
 * Add `onStreamCreated` callback to `HttpCacheManager`.
 
 * Export exception types for easier package-specific error handling.
