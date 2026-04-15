@@ -1,3 +1,10 @@
+## 0.0.6
+* Add `onStreamCreated` callback to `HttpCacheManager`.
+
+* Export exception types for easier package-specific error handling.
+
+* Fix iOS cache server becoming unresponsive after resuming from background.
+
 ## 0.0.5 
 * Add support for HTTP HEAD requests
 

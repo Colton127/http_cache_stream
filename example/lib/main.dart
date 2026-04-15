@@ -102,7 +102,6 @@ class _Body extends StatelessWidget {
           },
           child: Text('Delete Cache'),
         ),
-
         Divider(),
       ],
     );

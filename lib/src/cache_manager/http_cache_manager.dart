@@ -6,6 +6,7 @@ import 'package:http_cache_stream/src/cache_server/local_cache_server.dart';
 import 'package:http_cache_stream/src/etc/extensions/uri_extensions.dart';
 
 import '../../http_cache_stream.dart';
+import '../etc/callback_helpers.dart';
 import '../etc/extensions/future_extensions.dart';
 
 /// Manages the local HTTP server and `HttpCacheStream` instances.
@@ -53,16 +54,18 @@ class HttpCacheManager {
       config: config ?? createStreamConfig(),
     );
     final key = sourceUrl.requestKey;
-    cacheStream.future.onComplete(
-      () => _streams.remove(key),
-    ); //Remove when stream is disposed
-    _streams[key] = cacheStream; //Add to the stream map
-    onStreamCreated?.call(cacheStream);
+
+    ///Remove when stream is disposed
+    cacheStream.future.onComplete(() => _streams.remove(key));
+
+    ///Add to the stream map
+    _streams[key] = cacheStream;
+
+    if (_onStreamCreated case final streamCreatedCallback?) {
+      fireUserCallback(() => streamCreatedCallback(cacheStream));
+    }
     return cacheStream;
   }
-
-  /// Event fired when a new [HttpCacheStream] is created.
-  Function(HttpCacheStream stream)? onStreamCreated;
 
   /// Creates a [HttpCacheServer] instance for a source Uri. This server will redirect requests to the given source and create [HttpCacheStream] instances for each request.
   ///
@@ -230,6 +233,12 @@ class HttpCacheManager {
     }
   }
 
+  /// Set a callback to be fired when a new [HttpCacheStream] is created.
+  set onStreamCreated(HttpCacheStreamCreatedCallback? callback) {
+    _onStreamCreated = callback;
+  }
+
+  HttpCacheStreamCreatedCallback? _onStreamCreated;
   Directory get cacheDir => config.cacheDirectory;
   Iterable<HttpCacheStream> get allStreams => _streams.values;
   bool _disposed = false;
@@ -288,3 +297,5 @@ class HttpCacheManager {
   /// The singleton instance of [HttpCacheManager], or null if not initialized.
   static HttpCacheManager? get instanceOrNull => _instance;
 }
+
+typedef HttpCacheStreamCreatedCallback = void Function(HttpCacheStream stream);

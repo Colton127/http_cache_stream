@@ -1,13 +1,17 @@
 import 'dart:async';
 
-import 'package:http_cache_stream/http_cache_stream.dart';
-import 'package:http_cache_stream/src/cache_stream/cache_downloader/buffered_io_sink.dart';
-import 'package:http_cache_stream/src/etc/extensions/file_extensions.dart';
-import 'package:http_cache_stream/src/etc/extensions/list_extensions.dart';
-import 'package:http_cache_stream/src/models/exceptions/invalid_cache_exceptions.dart';
-import 'package:http_cache_stream/src/models/stream_requests/stream_request.dart';
-
+import '../../etc/extensions/file_extensions.dart';
+import '../../etc/extensions/list_extensions.dart';
+import '../../models/cache_files/cache_files.dart';
+import '../../models/config/stream_cache_config.dart';
 import '../../models/exceptions/http_exceptions.dart';
+import '../../models/exceptions/invalid_cache_exceptions.dart';
+import '../../models/metadata/cache_metadata.dart';
+import '../../models/metadata/cached_response_headers.dart';
+import '../../models/stream_requests/int_range.dart';
+import '../../models/stream_requests/stream_request.dart';
+import '../../models/stream_response/stream_response.dart';
+import 'buffered_io_sink.dart';
 import 'downloader.dart';
 
 class CacheDownloader {
@@ -49,11 +53,12 @@ class CacheDownloader {
     required final void Function(CachedResponseHeaders headers) onHeaders,
     required final void Function(int position) onPosition,
     required final Future<void> Function() onComplete,
-  }) {
+  }) async {
     final int maxBufferSize = _downloader.streamConfig.maxBufferSize;
 
-    return _downloader
-        .download(
+    try {
+      try {
+        await _downloader.download(
           downloadRange: () => IntRange(downloadPosition),
           onError: (error) {
             onError(error);
@@ -86,7 +91,7 @@ class CacheDownloader {
               _sink.flush().then((_) => _downloader.resume(),
                   onError: cancel); //Resume upstream after flushing
             } else if (!_sink.isFlushing) {
-              _sink.flush().catchError(cancel); //Flush to file asynchronously
+              _sink.flush().catchError(cancel);
             }
 
             _pendingStreamBytes = data.length;
@@ -96,42 +101,48 @@ class CacheDownloader {
                 data); //Add after processing queued requests. Requests may be fulfilled from the data.
             _pendingStreamBytes = 0;
           },
-        )
-        .catchError(onError, test: (e) => e is! InvalidCacheException)
-        .then(
-      (_) async {
-        await _sink.close(flushBuffer: true).catchError(
-            onError); //Flushes all buffered data and closes the sink
-        final partialCacheLength = (await _sink.file.stat()).size;
-        final sourceLength = _cachedHeaders?.sourceLength ??
-            (_downloader.isDone ? downloadPosition : null);
-        if (partialCacheLength == sourceLength) {
-          await onComplete();
-        } else if (partialCacheLength != downloadPosition) {
-          throw InvalidCacheLengthException(
-            sourceUrl,
-            partialCacheLength,
-            downloadPosition,
-          );
+        );
+      } on InvalidCacheException {
+        rethrow;
+      } catch (e) {
+        onError(e);
+      }
+
+      // Post-download — flush remaining data and verify cache integrity
+      try {
+        await _sink.close(
+            flushBuffer: true); //Flushes all buffered data and closes the sink
+      } catch (e) {
+        onError(e);
+      }
+      final partialCacheLength = (await _sink.file.stat()).size;
+      final sourceLength = _cachedHeaders?.sourceLength ??
+          (_downloader.isDone ? downloadPosition : null);
+      if (partialCacheLength == sourceLength) {
+        await onComplete();
+      } else if (partialCacheLength != downloadPosition &&
+          (partialCacheLength != -1 || downloadPosition != 0)) {
+        throw InvalidCacheLengthException(
+          sourceUrl,
+          partialCacheLength,
+          downloadPosition,
+        );
+      }
+    } finally {
+      if (!_completer.isCompleted) {
+        _completer.complete();
+      }
+      if (!_sink.isClosed) {
+        ///The sink is not closed on invalid cache exception, so we need to close it here
+        _sink.close(flushBuffer: false).ignore();
+      }
+      if (!_streamController.isClosed) {
+        if (!_downloader.isDone) {
+          _streamController.addError(DownloadStoppedException(sourceUrl));
         }
-      },
-    ).whenComplete(
-      () {
-        if (!_completer.isCompleted) {
-          _completer.complete();
-        }
-        if (!_sink.isClosed) {
-          ///The sink is not closed on invalid cache exception, so we need to close it here
-          _sink.close(flushBuffer: false).ignore();
-        }
-        if (!_streamController.isClosed) {
-          if (!_downloader.isDone) {
-            _streamController.addError(DownloadStoppedException(sourceUrl));
-          }
-          _streamController.close().ignore();
-        }
-      },
-    );
+        _streamController.close().ignore();
+      }
+    }
   }
 
   /// Cancels the download and closes the stream. An error must be provided to indicate the reason for cancellation.

@@ -1,9 +1,12 @@
 import 'dart:async';
 
-import 'package:http_cache_stream/http_cache_stream.dart';
-
 import '../../cache_stream/response_streams/combined_data_stream.dart';
+import '../cache_files/cache_files.dart';
+import '../config/stream_cache_config.dart';
 import '../exceptions/stream_response_exceptions.dart';
+import '../metadata/cached_response_headers.dart';
+import '../stream_requests/int_range.dart';
+import 'stream_response.dart';
 
 /// A stream that combines data from the partial cache file and the cache download stream.
 /// It first streams data from the partial cache file, and once the file is done, it switches to the download stream.
