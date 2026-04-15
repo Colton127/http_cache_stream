@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:http_cache_stream/http_cache_stream.dart';
+import 'stream_response.dart';
 
 /// A [StreamResponse] that contains an empty data stream.
 /// Typically used to complete HEAD requests, where no body data is expected.

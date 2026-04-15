@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:http_cache_stream/http_cache_stream.dart';
-
 import '../../etc/extensions/stream_extensions.dart';
+import '../../models/config/stream_cache_config.dart';
 import '../../models/exceptions/stream_response_exceptions.dart';
 import '../../models/stream_response/stream_response_range.dart';
 

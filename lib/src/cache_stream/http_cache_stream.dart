@@ -9,6 +9,7 @@ import 'package:http_cache_stream/src/models/metadata/cached_response_headers.da
 import 'package:http_cache_stream/src/models/stream_requests/int_range.dart';
 import 'package:synchronized/synchronized.dart';
 
+import '../etc/callback_helpers.dart';
 import '../etc/extensions/list_extensions.dart';
 import '../models/exceptions/http_exceptions.dart';
 import '../models/exceptions/invalid_cache_exceptions.dart';
@@ -241,7 +242,8 @@ class HttpCacheStream {
             }
             _updateProgressStream(1.0);
             downloadCompleter.complete(completedCacheFile);
-            config.onCacheComplete(this, completedCacheFile);
+            fireUserCallback(
+                () => config.onCacheComplete(this, completedCacheFile));
           },
           onHeaders: (responseHeaders) {
             _setCachedResponseHeaders(responseHeaders);

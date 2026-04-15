@@ -55,7 +55,6 @@ class _VideoPlayerExampleState extends State<VideoPlayerExample> {
               child: VideoPlayer(_controller),
             )
             : CircularProgressIndicator(),
-
         CacheProgressBar(httpCacheStream),
       ],
     );

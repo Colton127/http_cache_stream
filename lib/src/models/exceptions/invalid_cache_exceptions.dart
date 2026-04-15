@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:http_cache_stream/src/models/http_range/http_range.dart';
 
 import '../http_range/http_range_request.dart';
@@ -21,8 +19,7 @@ class CacheSourceChangedException extends InvalidCacheException {
   CacheSourceChangedException(Uri uri) : super(uri, 'Cache source changed');
 }
 
-class HttpRangeException extends InvalidCacheException
-    implements HttpException, RangeError {
+class HttpRangeException extends InvalidCacheException implements RangeError {
   final HttpRangeRequest request;
   final HttpRangeResponse? response;
   HttpRangeException(

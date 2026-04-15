@@ -1,8 +1,10 @@
 import 'dart:async';
 
-import 'package:http_cache_stream/http_cache_stream.dart';
-
 import '../../cache_stream/response_streams/cache_file_stream.dart';
+import '../cache_files/cache_files.dart';
+import '../metadata/cached_response_headers.dart';
+import '../stream_requests/int_range.dart';
+import 'stream_response.dart';
 import 'stream_response_range.dart';
 
 class FileStreamResponse extends StreamResponse {

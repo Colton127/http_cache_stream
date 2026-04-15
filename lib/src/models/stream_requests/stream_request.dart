@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:http_cache_stream/http_cache_stream.dart';
+import '../stream_response/stream_response.dart';
+import 'int_range.dart';
 
 class StreamRequest implements Comparable<StreamRequest> {
   final IntRange range;

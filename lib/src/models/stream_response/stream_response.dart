@@ -1,9 +1,11 @@
 import 'dart:async';
 
-import 'package:http_cache_stream/http_cache_stream.dart';
-import 'package:http_cache_stream/src/models/stream_response/combined_cache_stream_response.dart';
-
+import '../cache_files/cache_files.dart';
+import '../config/stream_cache_config.dart';
+import '../metadata/cached_response_headers.dart';
+import '../stream_requests/int_range.dart';
 import 'cache_download_stream_response.dart';
+import 'combined_cache_stream_response.dart';
 import 'file_stream_response.dart';
 import 'header_stream_response.dart';
 import 'range_download_stream_response.dart';
