@@ -2,8 +2,8 @@ import 'dart:async';
 
 import '../../etc/extensions/file_extensions.dart';
 import '../../etc/extensions/list_extensions.dart';
+import '../../models/cache_config/stream_cache_config.dart';
 import '../../models/cache_files/cache_files.dart';
-import '../../models/config/stream_cache_config.dart';
 import '../../models/exceptions/http_exceptions.dart';
 import '../../models/exceptions/invalid_cache_exceptions.dart';
 import '../../models/metadata/cache_metadata.dart';
@@ -116,17 +116,17 @@ class CacheDownloader {
         onError(e);
       }
       final partialCacheLength = (await _sink.file.stat()).size;
+
+      InvalidCacheSizeException.validate(
+        sourceUrl,
+        partialCacheLength,
+        downloadPosition,
+      );
+
       final sourceLength = _cachedHeaders?.sourceLength ??
           (_downloader.isDone ? downloadPosition : null);
       if (partialCacheLength == sourceLength) {
         await onComplete();
-      } else if (partialCacheLength != downloadPosition &&
-          (partialCacheLength != -1 || downloadPosition != 0)) {
-        throw InvalidCacheLengthException(
-          sourceUrl,
-          partialCacheLength,
-          downloadPosition,
-        );
       }
     } finally {
       if (!_completer.isCompleted) {

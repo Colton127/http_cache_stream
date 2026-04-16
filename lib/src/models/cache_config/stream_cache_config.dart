@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart';
 import 'package:http_cache_stream/http_cache_stream.dart';
 
+import '../../etc/callback_helpers.dart';
+
 /// Cache configuration for a single [HttpCacheStream].
 ///
 /// Values set here override the global values set in [GlobalCacheConfig].
@@ -144,9 +146,8 @@ class StreamCacheConfig implements CacheConfiguration {
     _saveAllHeaders = value;
   }
 
-  /// Register a callback to be called when this stream's cache is completely
-  /// downloaded and written to disk.
-  void Function(File cacheFile)? onCacheDone;
+  @override
+  CacheCompleteCallback? onCacheDone;
 
   /// Returns an immutable map of all custom request headers.
   Map<String, String> combinedRequestHeaders() {
@@ -169,9 +170,13 @@ class StreamCacheConfig implements CacheConfiguration {
   ///
   /// To register a callback, use [onCacheDone].
   @internal
-  void onCacheComplete(HttpCacheStream stream, File cacheFile) {
-    onCacheDone?.call(cacheFile);
-    _global.onCacheDone?.call(stream, cacheFile);
+  void handleCacheCompletion(HttpCacheStream stream, File cacheFile) {
+    if (onCacheDone case final cacheDoneCallback?) {
+      fireUserCallback(() => cacheDoneCallback(stream, cacheFile));
+    }
+    if (_global.onCacheDone case final globalCacheDoneCallback?) {
+      fireUserCallback(() => globalCacheDoneCallback(stream, cacheFile));
+    }
   }
 
   Map<String, String> _combineHeaders(

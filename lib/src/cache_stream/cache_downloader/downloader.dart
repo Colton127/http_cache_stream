@@ -4,7 +4,7 @@ import 'package:http_cache_stream/src/cache_stream/response_streams/download_str
 import 'package:http_cache_stream/src/models/exceptions/invalid_cache_exceptions.dart';
 
 import '../../etc/pause_counter.dart';
-import '../../models/config/stream_cache_config.dart';
+import '../../models/cache_config/stream_cache_config.dart';
 import '../../models/exceptions/http_exceptions.dart';
 import '../../models/metadata/cached_response_headers.dart';
 import '../../models/stream_requests/int_range.dart';

@@ -3,16 +3,16 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http_cache_stream/src/cache_stream/cache_downloader/cache_downloader.dart';
+import 'package:http_cache_stream/src/models/cache_config/stream_cache_config.dart';
 import 'package:http_cache_stream/src/models/cache_files/cache_files.dart';
-import 'package:http_cache_stream/src/models/config/stream_cache_config.dart';
 import 'package:http_cache_stream/src/models/metadata/cached_response_headers.dart';
 import 'package:http_cache_stream/src/models/stream_requests/int_range.dart';
 import 'package:synchronized/synchronized.dart';
 
-import '../etc/callback_helpers.dart';
 import '../etc/extensions/list_extensions.dart';
 import '../models/exceptions/http_exceptions.dart';
 import '../models/exceptions/invalid_cache_exceptions.dart';
+import '../models/exceptions/state_errors.dart';
 import '../models/exceptions/stream_response_exceptions.dart';
 import '../models/metadata/cache_metadata.dart';
 import '../models/stream_requests/stream_request.dart';
@@ -242,8 +242,7 @@ class HttpCacheStream {
             }
             _updateProgressStream(1.0);
             downloadCompleter.complete(completedCacheFile);
-            fireUserCallback(
-                () => config.onCacheComplete(this, completedCacheFile));
+            config.handleCacheCompletion(this, completedCacheFile);
           },
           onHeaders: (responseHeaders) {
             _setCachedResponseHeaders(responseHeaders);

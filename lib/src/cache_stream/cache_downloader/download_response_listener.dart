@@ -2,7 +2,7 @@ import 'dart:async';
 
 import '../../etc/chunked_bytes_buffer.dart';
 import '../../etc/timeout_timer.dart';
-import '../../models/config/stream_cache_config.dart';
+import '../../models/cache_config/stream_cache_config.dart';
 import '../../models/exceptions/http_exceptions.dart';
 
 class DownloadResponseListener {

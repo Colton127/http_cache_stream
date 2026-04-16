@@ -2,7 +2,7 @@ import 'dart:async';
 
 import '../../cache_stream/response_streams/download_stream.dart';
 import '../../etc/chunked_bytes_buffer.dart';
-import '../config/stream_cache_config.dart';
+import '../cache_config/stream_cache_config.dart';
 import '../stream_requests/int_range.dart';
 import 'stream_response.dart';
 

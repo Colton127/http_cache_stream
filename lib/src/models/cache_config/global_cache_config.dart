@@ -1,12 +1,12 @@
 import 'dart:io';
 
 import 'package:http/http.dart';
-import 'package:http_cache_stream/src/models/config/cache_config.dart';
+import 'package:http_cache_stream/src/models/cache_config/cache_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../cache_stream/http_cache_stream.dart';
-import 'cache_file_resolver.dart';
+import '../cache_files/cache_file_resolver.dart';
 
 /// A configuration class for [HttpCacheManager].
 ///
@@ -113,8 +113,8 @@ class GlobalCacheConfig implements CacheConfiguration {
   /// This function is called for every cache stream, unless if a custom file is provided when creating the cache stream.
   final CacheFileResolver cacheFileResolver;
 
-  /// Callback function fired when a cache stream download is completed.
-  void Function(HttpCacheStream cacheStream, File cacheFile)? onCacheDone;
+  @override
+  CacheCompleteCallback? onCacheDone;
 
   /// Returns the default cache directory for the application.
   ///

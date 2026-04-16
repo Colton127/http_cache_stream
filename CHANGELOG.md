@@ -1,3 +1,7 @@
+## 0.0.7
+
+* Renamed `InvalidCacheLengthException` to `InvalidCacheSizeException` and exposed expected/actual size.
+
 ## 0.0.6
 * Add `onStreamCreated` callback to `HttpCacheManager`.
 

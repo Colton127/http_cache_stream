@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart';
+
+import '../../../http_cache_stream.dart';
 
 abstract interface class CacheConfiguration {
   ///Custom headers to be sent when downloading cache.
@@ -80,6 +84,11 @@ abstract interface class CacheConfiguration {
   bool get saveAllHeaders;
   set saveAllHeaders(bool value);
 
+  /// Callback that is called when the cache is completely downloaded and written to disk.
+  CacheCompleteCallback? get onCacheDone;
+  set onCacheDone(CacheCompleteCallback? callback);
+
+  @internal
   static int? validateRangeRequestSplitThreshold(int? value) {
     if (value == null) return null;
     return RangeError.checkNotNegative(value, 'RangeRequestSplitThreshold');
@@ -101,3 +110,6 @@ abstract interface class CacheConfiguration {
     return value;
   }
 }
+
+typedef CacheCompleteCallback = void Function(
+    HttpCacheStream stream, File completedCacheFile);

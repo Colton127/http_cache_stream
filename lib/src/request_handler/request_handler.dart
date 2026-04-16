@@ -3,7 +3,7 @@ import 'dart:io';
 
 import '../cache_stream/http_cache_stream.dart';
 import '../etc/mime_types.dart';
-import '../models/config/stream_cache_config.dart';
+import '../models/cache_config/stream_cache_config.dart';
 import '../models/exceptions/invalid_cache_exceptions.dart';
 import '../models/http_range/http_range.dart';
 import '../models/http_range/http_range_request.dart';
