@@ -52,6 +52,11 @@ class StreamCacheConfig implements CacheConfiguration {
   }
 
   @override
+  StreamLifecycleConfig get lifecycleConfig {
+    return _lifecycleConfig ?? _global.lifecycleConfig;
+  }
+
+  @override
   bool get savePartialCache {
     return _savePartialCache ?? _global.savePartialCache;
   }
@@ -117,8 +122,7 @@ class StreamCacheConfig implements CacheConfiguration {
   @override
   set rangeRequestSplitThreshold(int? value) {
     _useGlobalRangeRequestSplitThreshold = false;
-    _rangeRequestSplitThreshold =
-        CacheConfiguration.validateRangeRequestSplitThreshold(value);
+    _rangeRequestSplitThreshold = CacheConfiguration.validateRangeRequestSplitThreshold(value);
   }
 
   @override
@@ -147,6 +151,11 @@ class StreamCacheConfig implements CacheConfiguration {
   }
 
   @override
+  set lifecycleConfig(StreamLifecycleConfig config) {
+    _lifecycleConfig = config;
+  }
+
+  @override
   CacheCompleteCallback? onCacheDone;
 
   /// Returns an immutable map of all custom request headers.
@@ -154,9 +163,7 @@ class StreamCacheConfig implements CacheConfiguration {
     return _combineHeaders(
       _global.requestHeaders,
       _requestHeaders,
-      defaultHeaders: const {
-        HttpHeaders.acceptEncodingHeader: 'identity'
-      }, // Avoid compressed responses
+      defaultHeaders: const {HttpHeaders.acceptEncodingHeader: 'identity'}, // Avoid compressed responses
     );
   }
 
@@ -199,6 +206,7 @@ class StreamCacheConfig implements CacheConfiguration {
 
   /// Stream-specific configuration
   bool _useGlobalRangeRequestSplitThreshold = true;
+  StreamLifecycleConfig? _lifecycleConfig;
   Duration? _readTimeout;
   Duration? _requestTimeout;
   bool? _copyCachedResponseHeaders;

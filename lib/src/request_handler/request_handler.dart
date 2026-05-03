@@ -19,19 +19,16 @@ class RequestHandler {
   SocketHandler? _socketHandler;
 
   Future<void> stream(final HttpCacheStream cacheStream) async {
-    final timeoutTimer = Timer(cacheStream.config.requestTimeout,
-        () => close(HttpStatus.gatewayTimeout));
+    final timeoutTimer = Timer(cacheStream.config.requestTimeout, () => close(HttpStatus.gatewayTimeout));
 
     StreamResponse? streamResponse;
     try {
       final rangeRequest = HttpRangeRequest.parse(_request);
       switch (_request.method) {
         case 'GET':
-          streamResponse = await cacheStream.request(
-              start: rangeRequest?.start, end: rangeRequest?.endEx);
+          streamResponse = await cacheStream.request(start: rangeRequest?.start, end: rangeRequest?.endEx);
         case 'HEAD':
-          streamResponse = await cacheStream.head(
-              start: rangeRequest?.start, end: rangeRequest?.endEx);
+          streamResponse = await cacheStream.head(start: rangeRequest?.start, end: rangeRequest?.endEx);
         default:
           close(HttpStatus.methodNotAllowed);
           return;
@@ -56,17 +53,14 @@ class RequestHandler {
       timeoutTimer.cancel();
       _requestClosed = true; //Response is now being handled via socket
 
-      final socketHandler = _socketHandler = SocketHandler(
-          await _request.response.detachSocket(writeHeaders: true));
-      await socketHandler.writeResponse(
-          streamResponse.stream, cacheStream.config.readTimeout);
+      final socketHandler = _socketHandler = SocketHandler(await _request.response.detachSocket(writeHeaders: true));
+      await socketHandler.writeResponse(streamResponse.stream, cacheStream.config.readTimeout);
       _socketHandler = null; //Clear the socket handler after done.
     } catch (e) {
       closeWithError(e, cacheStream.metadata.headers);
     } finally {
       timeoutTimer.cancel();
-      streamResponse
-          ?.cancel(); //Ensure we cancel the stream response to free resources.
+      streamResponse?.cancel(); //Ensure we cancel the stream response to free resources.
       streamResponse = null;
     }
   }
@@ -88,15 +82,11 @@ class RequestHandler {
     }
     cacheConfig.combinedResponseHeaders().forEach(httpResponse.headers.set);
 
-    String? contentType =
-        httpResponse.headers.value(HttpHeaders.contentTypeHeader) ??
-            cacheHeaders.get(HttpHeaders.contentTypeHeader);
-    if (contentType == null ||
-        contentType.isEmpty ||
-        contentType == MimeTypes.octetStream) {
-      contentType =
-          MimeTypes.fromPath(_request.uri.path) ?? MimeTypes.octetStream;
+    String? contentType = httpResponse.headers.value(HttpHeaders.contentTypeHeader) ?? cacheHeaders.get(HttpHeaders.contentTypeHeader);
+    if (contentType == null || contentType.isEmpty || contentType == MimeTypes.octetStream) {
+      contentType = MimeTypes.fromPath(_request.uri.path) ?? MimeTypes.octetStream;
     }
+
     httpResponse.headers.set(HttpHeaders.contentTypeHeader, contentType);
 
     if (rangeRequest == null) {
@@ -131,8 +121,7 @@ class RequestHandler {
         case RangeError() || HttpRangeException():
           statusCode = HttpStatus.requestedRangeNotSatisfiable;
           if (headers?.sourceLength case final int sourceLength) {
-            _request.response.headers
-                .set(HttpHeaders.contentRangeHeader, 'bytes */$sourceLength');
+            _request.response.headers.set(HttpHeaders.contentRangeHeader, 'bytes */$sourceLength');
           }
         case TimeoutException():
           statusCode = HttpStatus.gatewayTimeout;

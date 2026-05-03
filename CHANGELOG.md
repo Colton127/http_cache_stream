@@ -1,3 +1,58 @@
+## 0.1.0
+
+* Added `StreamLifecycleConfig` to cache configuration — controls pause and dispose
+  delays for inactive streams.
+
+* Added `release()` method to `HttpCacheStream`. Once released, the stream pauses
+  its ongoing download after `StreamLifecycleConfig.pauseDelay` and is fully disposed
+  after `StreamLifecycleConfig.disposeDelay`. Calling `retain()` before disposal
+  cancels the timers and resumes the download.
+  The `dispose()` method retains its original behaviour (immediate disposal,
+  bypassing lifecycle configuration).
+
+* `HttpCacheServer` is now the recommended approach for any scenario involving
+  multiple URLs from the same origin (HLS/DASH, playlists, CDN-hosted assets).
+  `HttpCacheManager.createServer` returns an existing server by default when called
+  with the same origin, so a single server instance can be shared application-wide.
+
+---
+
+BREAKING: `HttpCacheServer` changes:
+
+* `HttpCacheServer.source` renamed to `HttpCacheServer.origin`. The field has always
+  held only the origin (scheme+host+port), and the new name reflects that precisely.
+  URLs with the same origin (e.g. `https://cdn.example.com/1.mp3` and
+  `https://cdn.example.com/2.mp3`) are both handled by the same server.
+
+* `HttpCacheServer.dispose()` renamed to `HttpCacheServer.close()`.
+
+* `HttpCacheServer.isDisposed` renamed to `HttpCacheServer.isClosed`.
+
+* `HttpCacheManager.createServer` parameter renamed from `source` to `origin`.
+  `createServer` now returns an existing server for the same origin by default
+  (`returnExisting: true`). Pass `returnExisting: false` to force a new server.
+
+* `HttpCacheManager.getExistingServer` parameter renamed from `sourceUrl` to `origin`.
+
+---
+
+BREAKING: `HttpCacheManager.createServer` lifecycle changes:
+
+* Removed `autoDisposeDelay` parameter. Configure stream lifecycle via
+  `StreamLifecycleConfig` on the `StreamCacheConfig` passed to `createServer` instead:
+
+  ```dart
+  // Before
+  await manager.createServer(source, autoDisposeDelay: Duration(seconds: 30));
+
+  // After
+  final config = manager.createStreamConfig();
+  config.lifecycleConfig = StreamLifecycleConfig(
+    pauseDelay: Duration(seconds: 10),
+    disposeDelay: Duration(seconds: 30),
+  );
+  await manager.createServer(Uri.parse('https://cdn.example.com'), config: config);
+
 ## 0.0.7
 
 * Renamed `InvalidCacheLengthException` to `InvalidCacheSizeException` and exposed expected/actual size.

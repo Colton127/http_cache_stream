@@ -3,83 +3,88 @@ import 'dart:async';
 import 'package:http_cache_stream/src/cache_server/local_cache_server.dart';
 
 import '../../http_cache_stream.dart';
+import '../etc/extensions/uri_extensions.dart';
 
-/// A server that redirects requests to a source and automatically creates
-/// [HttpCacheStream] instances.
+/// A local proxy server that creates and manages [HttpCacheStream] instances
+/// for a given origin, automatically routing requests and handling lifecycle.
+///
+/// `HttpCacheServer` is the recommended approach when working with content that
+/// spans multiple URLs sharing the same origin — for example, HLS/DASH manifests
+/// that reference many segment files, or a media player managing a playlist of
+/// tracks from the same CDN.
+///
+/// Create an instance via [HttpCacheManager.createServer]. By default, the manager
+/// returns an existing server when one already exists for the same [origin], so a
+/// single `HttpCacheServer` can be shared across your application for a given host.
+///
+/// Convert any URL on the same origin to a local cache URL using [getCacheUrl]:
+/// ```dart
+/// final server = await cacheManager.createServer(
+///   Uri.parse('https://cdn.example.com'),
+/// );
+/// // Both URLs below share the same origin and use the same server.
+/// final track1 = server.getCacheUrl(Uri.parse('https://cdn.example.com/1.mp3'));
+/// final track2 = server.getCacheUrl(Uri.parse('https://cdn.example.com/2.mp3'));
+/// ```
 class HttpCacheServer {
-  /// The base source URI for this server.
-  final Uri source;
+  /// The origin URI used to fulfill requests to this server.
+  /// Example: "https://cdn.example.com".
+  final Uri origin;
 
   final LocalCacheServer _localCacheServer;
 
-  /// The delay before a stream is disposed after all requests are completed.
-  final Duration autoDisposeDelay;
-
   /// The configuration for each generated stream.
   final StreamCacheConfig config;
-  final HttpCacheStream Function(Uri sourceUrl, {StreamCacheConfig config})
-      _createCacheStream;
-  HttpCacheServer(this.source, this._localCacheServer, this.autoDisposeDelay,
-      this.config, this._createCacheStream) {
+  final HttpCacheStream Function(Uri sourceUrl, {StreamCacheConfig? config}) _createCacheStream;
+  HttpCacheServer(this.origin, this._localCacheServer, this.config, this._createCacheStream) {
     _localCacheServer.start((request) {
-      final sourceUrl = getSourceUrl(request.uri);
+      final sourceUrl = request.uri.replaceOrigin(origin);
       final cacheStream = _createCacheStream(sourceUrl, config: config);
-
-      return request.stream(cacheStream).whenComplete(() {
-        if (isDisposed) {
-          cacheStream
-              .dispose()
-              .ignore(); // Decrease retainCount immediately if the server is disposed
-        } else {
-          Timer(
-              autoDisposeDelay,
-              () => cacheStream
-                  .dispose()
-                  .ignore()); // Decrease the stream's retainCount for autoDispose
-        }
-      });
+      return request.stream(cacheStream).whenComplete(cacheStream.release);
     });
   }
 
-  /// Returns the cache URL for a given source URL.
+  /// Returns the local cache URL for the given [sourceUrl].
+  ///
+  /// The [sourceUrl] must share the same [origin] as this server.
   Uri getCacheUrl(Uri sourceUrl) {
-    if (sourceUrl.scheme != source.scheme ||
-        sourceUrl.host != source.host ||
-        sourceUrl.port != source.port) {
-      throw ArgumentError('Invalid source URL: $sourceUrl');
+    _checkClosed();
+
+    if (sourceUrl.originEquals(origin)) {
+      return _localCacheServer.getCacheUrl(sourceUrl);
+    } else if (sourceUrl.originEquals(_localCacheServer.serverUri)) {
+      return sourceUrl; // Already a cache URL, return as is
+    } else {
+      throw ArgumentError('Invalid source URL: $sourceUrl does not match server origin: $origin');
     }
-    return _localCacheServer.getCacheUrl(sourceUrl);
   }
 
-  /// Returns the source URL for a given cache URL.
-  Uri getSourceUrl(Uri cacheUrl) {
-    return cacheUrl.replace(
-      scheme: source.scheme,
-      host: source.host,
-      port: source.port,
-    );
+  /// Closes this [HttpCacheServer] and its underlying local server.
+  /// If [force] is true, active connections will be closed immediately.
+  Future<void> close({bool force = false}) {
+    if (!_doneCompleter.isCompleted) {
+      _doneCompleter.complete();
+    }
+    return _localCacheServer.close(force: force);
   }
+
+  void _checkClosed() {
+    if (isClosed) {
+      throw CacheServerClosedException(origin);
+    }
+  }
+
+  final _doneCompleter = Completer<void>();
 
   /// The URI of the local cache server.
-  ///
-  /// Requests to this URI will be redirected to the source URL.
+  /// Requests to this URI will be redirected to the `origin` and fulfilled by this server.
   Uri get uri => _localCacheServer.serverUri;
 
-  /// Disposes this [HttpCacheServer] and closes the local server.
-  Future<void> dispose() {
-    if (_completer.isCompleted) {
-      return _completer.future;
-    } else {
-      _completer.complete();
-      return _localCacheServer.close();
-    }
-  }
+  int get port => _localCacheServer.serverUri.port;
 
-  final _completer = Completer<void>();
+  /// Whether the server has been closed.
+  bool get isClosed => _doneCompleter.isCompleted;
 
-  /// Whether the server has been disposed.
-  bool get isDisposed => _completer.isCompleted;
-
-  /// A future that completes when the server is disposed.
-  Future<void> get future => _completer.future;
+  /// A future that completes when the server is closed.
+  Future<void> get future => _doneCompleter.future;
 }

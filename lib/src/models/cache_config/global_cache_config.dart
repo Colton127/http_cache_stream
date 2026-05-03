@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../cache_stream/http_cache_stream.dart';
 import '../cache_files/cache_file_resolver.dart';
+import 'stream_lifecycle_config.dart';
 
 /// A configuration class for [HttpCacheManager].
 ///
@@ -20,6 +21,7 @@ class GlobalCacheConfig implements CacheConfiguration {
     int? rangeRequestSplitThreshold,
     Map<String, String>? requestHeaders,
     Map<String, String>? responseHeaders,
+    this.lifecycleConfig = const StreamLifecycleConfig(),
     this.customHttpClient,
     this.copyCachedResponseHeaders = false,
     this.validateOutdatedCache = false,
@@ -33,12 +35,9 @@ class GlobalCacheConfig implements CacheConfiguration {
   })  : httpClient = customHttpClient ?? Client(),
         requestHeaders = requestHeaders ?? {},
         responseHeaders = responseHeaders ?? {},
-        _maxBufferSize =
-            CacheConfiguration.validateMaxBufferSize(maxBufferSize),
+        _maxBufferSize = CacheConfiguration.validateMaxBufferSize(maxBufferSize),
         _minChunkSize = CacheConfiguration.validateMinChunkSize(minChunkSize),
-        _rangeRequestSplitThreshold =
-            CacheConfiguration.validateRangeRequestSplitThreshold(
-                rangeRequestSplitThreshold);
+        _rangeRequestSplitThreshold = CacheConfiguration.validateRangeRequestSplitThreshold(rangeRequestSplitThreshold);
 
   /// The directory where the cache files will be stored.
   final Directory cacheDirectory;
@@ -75,8 +74,7 @@ class GlobalCacheConfig implements CacheConfiguration {
 
   @override
   set rangeRequestSplitThreshold(int? value) {
-    _rangeRequestSplitThreshold =
-        CacheConfiguration.validateRangeRequestSplitThreshold(value);
+    _rangeRequestSplitThreshold = CacheConfiguration.validateRangeRequestSplitThreshold(value);
   }
 
   int _minChunkSize;
@@ -107,6 +105,9 @@ class GlobalCacheConfig implements CacheConfiguration {
 
   @override
   bool saveAllHeaders;
+
+  @override
+  StreamLifecycleConfig lifecycleConfig;
 
   /// A function that takes the cache directory and source URL, and returns a [File] where the cache should be stored.
   /// This allows for custom file naming and organization strategies. By default, it generates a file path based on the URL structure.

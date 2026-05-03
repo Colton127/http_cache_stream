@@ -84,6 +84,10 @@ abstract interface class CacheConfiguration {
   bool get saveAllHeaders;
   set saveAllHeaders(bool value);
 
+  /// The lifecycle configuration for the cache stream, which controls when the cache stream should be automatically disposed.
+  StreamLifecycleConfig get lifecycleConfig;
+  set lifecycleConfig(StreamLifecycleConfig config);
+
   /// Callback that is called when the cache is completely downloaded and written to disk.
   CacheCompleteCallback? get onCacheDone;
   set onCacheDone(CacheCompleteCallback? callback);
@@ -111,5 +115,4 @@ abstract interface class CacheConfiguration {
   }
 }
 
-typedef CacheCompleteCallback = void Function(
-    HttpCacheStream stream, File completedCacheFile);
+typedef CacheCompleteCallback = void Function(HttpCacheStream stream, File completedCacheFile);
