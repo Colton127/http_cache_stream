@@ -23,10 +23,7 @@ class _VideoPlayerExampleState extends State<HLSVideoExample> {
 
   void _init() async {
     final sourceUrl = widget.sourceUrl;
-    final cacheServer = await HttpCacheManager.instance.createServer(sourceUrl);
-    if (!mounted) return;
-
-    final cacheUrl = cacheServer.getCacheUrl(sourceUrl);
+    final cacheUrl = HttpCacheManager.instance.getCacheUrl(sourceUrl);
     print('Playing from: $cacheUrl');
     final controller = _controller = VideoPlayerController.networkUrl(cacheUrl);
     await controller.initialize();
@@ -48,6 +45,9 @@ class _VideoPlayerExampleState extends State<HLSVideoExample> {
     if (controller == null) {
       return const CircularProgressIndicator();
     }
-    return AspectRatio(aspectRatio: controller.value.aspectRatio, child: VideoPlayer(controller));
+    return AspectRatio(
+      aspectRatio: controller.value.aspectRatio,
+      child: VideoPlayer(controller),
+    );
   }
 }

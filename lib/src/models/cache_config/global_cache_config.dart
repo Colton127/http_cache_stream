@@ -35,9 +35,12 @@ class GlobalCacheConfig implements CacheConfiguration {
   })  : httpClient = customHttpClient ?? Client(),
         requestHeaders = requestHeaders ?? {},
         responseHeaders = responseHeaders ?? {},
-        _maxBufferSize = CacheConfiguration.validateMaxBufferSize(maxBufferSize),
+        _maxBufferSize =
+            CacheConfiguration.validateMaxBufferSize(maxBufferSize),
         _minChunkSize = CacheConfiguration.validateMinChunkSize(minChunkSize),
-        _rangeRequestSplitThreshold = CacheConfiguration.validateRangeRequestSplitThreshold(rangeRequestSplitThreshold);
+        _rangeRequestSplitThreshold =
+            CacheConfiguration.validateRangeRequestSplitThreshold(
+                rangeRequestSplitThreshold);
 
   /// The directory where the cache files will be stored.
   final Directory cacheDirectory;
@@ -74,7 +77,8 @@ class GlobalCacheConfig implements CacheConfiguration {
 
   @override
   set rangeRequestSplitThreshold(int? value) {
-    _rangeRequestSplitThreshold = CacheConfiguration.validateRangeRequestSplitThreshold(value);
+    _rangeRequestSplitThreshold =
+        CacheConfiguration.validateRangeRequestSplitThreshold(value);
   }
 
   int _minChunkSize;
@@ -123,5 +127,16 @@ class GlobalCacheConfig implements CacheConfiguration {
   static Future<Directory> defaultCacheDirectory() async {
     final temporaryDirectory = await getTemporaryDirectory();
     return Directory(p.join(temporaryDirectory.path, 'http_cache_stream'));
+  }
+
+  /// Initializes a [GlobalCacheConfig] instance with the provided parameters, or default values if not provided.
+  static Future<GlobalCacheConfig> init({
+    final Directory? cacheDir,
+    final Client? customHttpClient,
+  }) async {
+    return GlobalCacheConfig(
+      cacheDirectory: cacheDir ?? await defaultCacheDirectory(),
+      customHttpClient: customHttpClient,
+    );
   }
 }

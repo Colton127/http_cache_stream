@@ -1,57 +1,27 @@
 ## 0.1.0
 
-* Added `StreamLifecycleConfig` to cache configuration — controls pause and dispose
-  delays for inactive streams.
+This release significantly simplifies cache management. A new `getCacheUrl` API automates the full lifecycle of cache streams, eliminating the need to create or manage `HttpCacheStream` instances for most integrations.
 
-* Added `release()` method to `HttpCacheStream`. Once released, the stream pauses
-  its ongoing download after `StreamLifecycleConfig.pauseDelay` and is fully disposed
-  after `StreamLifecycleConfig.disposeDelay`. Calling `retain()` before disposal
-  cancels the timers and resumes the download.
-  The `dispose()` method retains its original behaviour (immediate disposal,
-  bypassing lifecycle configuration).
+### Breaking Changes
 
-* `HttpCacheServer` is now the recommended approach for any scenario involving
-  multiple URLs from the same origin (HLS/DASH, playlists, CDN-hosted assets).
-  `HttpCacheManager.createServer` returns an existing server by default when called
-  with the same origin, so a single server instance can be shared application-wide.
+- **`HttpCacheServer` has been removed.** Use `HttpCacheManager.getCacheUrl` instead. It covers all previous use cases, including HLS/DASH and other dynamic URL patterns, with full lifecycle automation.
 
----
+### New Features
 
-BREAKING: `HttpCacheServer` changes:
+**`HttpCacheManager`**
 
-* `HttpCacheServer.source` renamed to `HttpCacheServer.origin`. The field has always
-  held only the origin (scheme+host+port), and the new name reflects that precisely.
-  URLs with the same origin (e.g. `https://cdn.example.com/1.mp3` and
-  `https://cdn.example.com/2.mp3`) are both handled by the same server.
+- Added `getCacheUrl(Uri sourceUrl)`. Returns a local cache URL that can be passed directly to any media player. Cache streams are created lazily on first request and their lifecycle is managed automatically by the cache manager.
+- Added an optional `port` parameter to `HttpCacheManager.init`. Specifying a custom port allows cache urls to work across app restarts.
 
-* `HttpCacheServer.dispose()` renamed to `HttpCacheServer.close()`.
+**`HttpCacheStream`**
 
-* `HttpCacheServer.isDisposed` renamed to `HttpCacheServer.isClosed`.
+- Added `release()`. Hands the stream back to the cache manager for lifecycle-managed teardown, governed by `StreamLifecycleConfig`. Use `release()` in place of `dispose()` when the stream may be reused. `dispose()` continues to work as before and bypasses the lifecycle configuration.
+- Added `CacheState`, a richer alternative to the plain progress value. It tracks both the current cache position (bytes on disk) and the total source length. Access the latest snapshot via `cacheStream.cacheState`, or subscribe to changes via `cacheStream.cacheStateStream`.
+- Added `StreamLifecycleConfig` to `CacheConfiguration`. Controls the inactive-stream behavior applied after `release()` is called. By default: downloads are paused after 10 seconds of inactivity, cancelled after the configured `readTimeout`, and the stream is fully disposed after 5 minutes.
 
-* `HttpCacheManager.createServer` parameter renamed from `source` to `origin`.
-  `createServer` now returns an existing server for the same origin by default
-  (`returnExisting: true`). Pass `returnExisting: false` to force a new server.
+### Improvements
 
-* `HttpCacheManager.getExistingServer` parameter renamed from `sourceUrl` to `origin`.
-
----
-
-BREAKING: `HttpCacheManager.createServer` lifecycle changes:
-
-* Removed `autoDisposeDelay` parameter. Configure stream lifecycle via
-  `StreamLifecycleConfig` on the `StreamCacheConfig` passed to `createServer` instead:
-
-  ```dart
-  // Before
-  await manager.createServer(source, autoDisposeDelay: Duration(seconds: 30));
-
-  // After
-  final config = manager.createStreamConfig();
-  config.lifecycleConfig = StreamLifecycleConfig(
-    pauseDelay: Duration(seconds: 10),
-    disposeDelay: Duration(seconds: 30),
-  );
-  await manager.createServer(Uri.parse('https://cdn.example.com'), config: config);
+- Cache headers are now read using async I/O.
 
 ## 0.0.7
 

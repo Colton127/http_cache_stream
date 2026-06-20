@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -6,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/http.dart';
 import 'package:http_cache_stream/src/models/http_range/http_range_response.dart';
 
+import '../../etc/helpers.dart';
 import '../../etc/mime_types.dart';
 import '../cache_files/cache_files.dart';
 import '../exceptions/http_exceptions.dart';
@@ -138,7 +138,7 @@ class CachedResponseHeaders {
 
     for (final header in essentialHeaders) {
       final value = _headers[header];
-      if (value != null) {
+      if (value != null && value.isNotEmpty) {
         retainedHeaders[header] = value;
       }
     }
@@ -187,7 +187,7 @@ class CachedResponseHeaders {
   static CachedResponseHeaders? fromCacheFiles(final CacheFiles cacheFiles) {
     try {
       if (cacheFiles.metadata.existsSync()) {
-        final json = jsonDecode(cacheFiles.metadata.readAsStringSync());
+        final json = jsonDecodeBytes(cacheFiles.metadata.readAsBytesSync());
         if (json is Map<String, dynamic>) {
           final headersFromJson = CachedResponseHeaders.fromJson(json['headers']);
           if (headersFromJson != null) return headersFromJson;
@@ -202,7 +202,7 @@ class CachedResponseHeaders {
   static Future<CachedResponseHeaders?> fromCacheFilesAsync(final CacheFiles cacheFiles) async {
     try {
       if (await cacheFiles.metadata.exists()) {
-        final json = jsonDecode(await cacheFiles.metadata.readAsString());
+        final json = jsonDecodeBytes(await cacheFiles.metadata.readAsBytes());
         if (json is Map<String, dynamic>) {
           final headersFromJson = CachedResponseHeaders.fromJson(json['headers']);
           if (headersFromJson != null) return headersFromJson;

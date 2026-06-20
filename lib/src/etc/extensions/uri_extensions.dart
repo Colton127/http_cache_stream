@@ -1,6 +1,4 @@
 extension UriExtensions on Uri {
-  //A helper method to get the path and query of a URI
-  //This is useful for creating a unique key to identify the request
   RequestKey get requestKey {
     return RequestKey(this);
   }
@@ -23,5 +21,6 @@ extension UriExtensions on Uri {
 }
 
 extension type const RequestKey._(String _value) implements String {
-  factory RequestKey(Uri uri) => RequestKey._('${uri.path}?${uri.query}');
+  factory RequestKey(Uri uri) =>
+      RequestKey._('${uri.host}${uri.path}?${uri.query}');
 }

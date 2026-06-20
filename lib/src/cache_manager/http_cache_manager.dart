@@ -4,11 +4,10 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http_cache_stream/src/cache_server/local_cache_server.dart';
 import 'package:http_cache_stream/src/etc/extensions/uri_extensions.dart';
-import 'package:synchronized/synchronized.dart';
 
 import '../../http_cache_stream.dart';
-import '../etc/callback_helpers.dart';
 import '../etc/extensions/future_extensions.dart';
+import '../etc/helpers.dart';
 
 /// Manages the local HTTP server and `HttpCacheStream` instances.
 ///
@@ -20,119 +19,70 @@ class HttpCacheManager {
   final GlobalCacheConfig config;
 
   final Map<RequestKey, HttpCacheStream> _streams = {};
-  final List<HttpCacheServer> _cacheServers = [];
+  final Map<RequestKey, File> _customCacheFiles = {};
   HttpCacheManager._(this._server, this.config) {
-    _server.start((request) {
-      final Uri? sourceUrl = _server.decodeSourceUrl(request.uri);
-      if (sourceUrl != null) {
-        print('Creating cache stream for decoded source URL: $sourceUrl');
-        return request.stream(createStream(sourceUrl));
-      }
-
-      final cacheStream = getExistingStream(request.uri);
-      if (cacheStream != null) {
-        return request.stream(cacheStream);
-      } else {
-        request.close(HttpStatus.serviceUnavailable);
-        return Future.value();
-      }
-    });
+    _server.start(createStream);
   }
 
-  Uri getCacheUrl(final Uri sourceUrl) {
+  /// Gets the cache URL for the given source URL.
+  /// If a custom cache file is provided, it will be saved and used for the cache stream.
+  Uri getCacheUrl(final Uri sourceUrl, {final File? file}) {
     _checkDisposed();
+    if (file != null) {
+      _customCacheFiles[sourceUrl.requestKey] = file;
+    }
     return _server.encodeSourceUrl(sourceUrl);
   }
 
   /// Create a [HttpCacheStream] instance for the given URL. If an instance already exists, the existing instance will be returned.
-  /// Use [file] to specify the output file to save the downloaded content to. If not provided, a file will be created in the cache directory (recommended).
+  /// Use [file] to specify the output file to save the downloaded content to. If not provided, a file will be created in the cache directory.
+  /// Prefer [getCacheUrl] unless if you need access to the `HttpCacheStream` instance.
   HttpCacheStream createStream(
     final Uri sourceUrl, {
     final File? file,
     final StreamCacheConfig? config,
   }) {
     _checkDisposed();
-    final existingStream = getExistingStream(sourceUrl);
+    final requestKey = sourceUrl.requestKey;
+
+    final existingStream = _streams[requestKey];
     if (existingStream != null && !existingStream.isDisposed) {
-      existingStream.retain(); //Retain the stream to prevent it from being disposed
+      existingStream.retain(); //Retain the stream to prevent it from being disposed while in use
       return existingStream;
     }
+
+    CacheFiles cacheFiles;
+    if (file != null) {
+      _customCacheFiles[requestKey] = file;
+      cacheFiles = CacheFiles.fromFile(file);
+    } else {
+      cacheFiles = _resolveCacheFiles(sourceUrl);
+    }
+
     final cacheStream = HttpCacheStream(
       sourceUrl: sourceUrl,
-      cacheUrl: _server.getCacheUrl(sourceUrl),
-      files: _resolveCacheFiles(sourceUrl, file),
+      cacheUrl: _server.encodeSourceUrl(sourceUrl),
+      files: cacheFiles,
       config: config ?? createStreamConfig(),
     );
-    final key = sourceUrl.requestKey;
+
+    ///Add to the stream map
+    _streams[requestKey] = cacheStream;
 
     ///Remove when stream is disposed
     cacheStream.future.onComplete(() {
-      _streams.remove(key);
-      print('Cache stream for URL $sourceUrl disposed and removed from manager');
+      _streams.remove(requestKey);
     });
-
-    ///Add to the stream map
-    _streams[key] = cacheStream;
 
     if (_onStreamCreated case final streamCreatedCallback?) {
       fireUserCallback(() => streamCreatedCallback(cacheStream));
     }
 
-    print('Created new cache stream for URL: $sourceUrl');
     return cacheStream;
   }
 
-  /// Creates an [HttpCacheServer] for the given [origin], or returns an existing
-  /// one if [returnExisting] is true (the default).
-  ///
-  /// [origin] is matched by scheme, host, and port only — the path is ignored.
-  /// For example, `https://cdn.example.com/1.mp3` and
-  /// `https://cdn.example.com/2.mp3` both resolve to the same server.
-  ///
-  /// Use [StreamLifecycleConfig] on [config] to control the lifecycle of
-  /// [HttpCacheStream] instances created by the server.
-  /// Use [port] to bind to a specific port (random if omitted).
-  Future<HttpCacheServer> createServer(
-    final Uri origin, {
-    final StreamCacheConfig? config,
-    final bool returnExisting = true,
-    final int? port,
-  }) {
-    return _createServerLock.synchronized(() async {
-      _checkDisposed();
-
-      if (returnExisting) {
-        final existing = getExistingServer(origin, port: port);
-        if (existing != null) return existing;
-      }
-
-      final cacheServer = HttpCacheServer(
-        origin.originUri,
-        await LocalCacheServer.init(port: port),
-        config ?? createStreamConfig(),
-        createStream,
-      );
-
-      if (_disposed) {
-        cacheServer.close(force: true).ignore();
-        throw CacheManagerDisposedException();
-      }
-
-      _cacheServers.add(cacheServer);
-      cacheServer.future.onComplete(() => _cacheServers.remove(cacheServer));
-      return cacheServer;
-    });
-  }
-
-  /// Downloads URL to file without creating a stream.
-  ///
-  /// Useful for pre-caching content.
+  /// Downloads the content of the given URL and saves it to a cache file. Returns the downloaded file.
   Future<File> preCacheUrl(final Uri sourceUrl, {final File? cacheFile}) async {
-    final completeCacheFile = getCacheFiles(sourceUrl, cacheFile).complete;
-    if (completeCacheFile.existsSync()) {
-      return completeCacheFile;
-    }
-
     final cacheStream = createStream(sourceUrl, file: cacheFile);
     try {
       return await cacheStream.download();
@@ -200,36 +150,29 @@ class HttpCacheManager {
   }
 
   ///Get the [CacheMetadata] for the given URL or input [cacheFile]. Returns null if the metadata does not exist.
-  CacheMetadata? getCacheMetadata(final Uri sourceUrl, [File? cacheFile]) {
-    return getExistingStream(sourceUrl)?.metadata ?? CacheMetadata.fromCacheFiles(_resolveCacheFiles(sourceUrl, cacheFile));
+  CacheMetadata? getCacheMetadata(Uri url, [File? cacheFile]) {
+    return getExistingStream(url)?.metadata ?? CacheMetadata.fromCacheFiles(_resolveCacheFiles(url, cacheFile));
   }
 
   ///Gets [CacheFiles] for the given URL or input [cacheFile]. Does not check if any cache files exists.
-  CacheFiles getCacheFiles(final Uri sourceUrl, [File? cacheFile]) {
-    return getExistingStream(sourceUrl)?.files ?? _resolveCacheFiles(sourceUrl, cacheFile);
+  CacheFiles getCacheFiles(Uri url, [File? cacheFile]) {
+    return getExistingStream(url)?.files ?? _resolveCacheFiles(url, cacheFile);
   }
 
   /// Returns the existing [HttpCacheStream] for the given URL, or null if it doesn't exist.
   /// The input [url] can either be [sourceUrl] or [cacheUrl].
-  HttpCacheStream? getExistingStream(final Uri url) {
+  HttpCacheStream? getExistingStream(Uri url) {
+    _checkDisposed();
+    url = _server.decodeSourceUrl(url) ?? url;
     return _streams[url.requestKey];
   }
 
-  ///Returns the existing [HttpCacheServer] for the given source URL, or null if it doesn't exist.
-  HttpCacheServer? getExistingServer(final Uri origin, {int? port}) {
-    for (final cacheServer in _cacheServers) {
-      if (cacheServer.origin.originEquals(origin) && !cacheServer.isClosed) {
-        if (port == null || port == 0 || cacheServer.port == port) {
-          return cacheServer;
-        }
-      }
+  CacheFiles _resolveCacheFiles(Uri sourceUrl, [File? cacheFile]) {
+    if (cacheFile == null) {
+      sourceUrl = _server.decodeSourceUrl(sourceUrl) ?? sourceUrl;
+      cacheFile = _customCacheFiles[sourceUrl.requestKey] ?? config.cacheFileResolver(config.cacheDirectory, sourceUrl);
     }
-    return null;
-  }
-
-  CacheFiles _resolveCacheFiles(Uri sourceUrl, [File? file]) {
-    file ??= config.cacheFileResolver(config.cacheDirectory, sourceUrl);
-    return CacheFiles.fromFile(file);
+    return CacheFiles.fromFile(cacheFile);
   }
 
   ///Create a [StreamCacheConfig] that inherits the current [GlobalCacheConfig]. This config is used to create [HttpCacheStream] instances.
@@ -240,16 +183,16 @@ class HttpCacheManager {
     if (_disposed) return;
     _disposed = true;
     HttpCacheManager._instance = null;
+    _onStreamCreated = null;
 
     try {
-      await Future.wait([
-        _server.close(force: true),
-        ..._cacheServers.map((server) => server.close(force: true)),
-        ..._streams.values.map((stream) => stream.dispose(force: true)),
-      ]);
+      await _server.close(force: true);
     } finally {
+      _customCacheFiles.clear();
+      for (final stream in _streams.values.toList()) {
+        stream.dispose().ignore();
+      }
       _streams.clear();
-      _cacheServers.clear();
       if (config.customHttpClient == null) {
         config.httpClient.close(); // Close the default http client only
       }
@@ -258,6 +201,7 @@ class HttpCacheManager {
 
   /// Set a callback to be fired when a new [HttpCacheStream] is created.
   set onStreamCreated(HttpCacheStreamCreatedCallback? callback) {
+    _checkDisposed();
     _onStreamCreated = callback;
   }
 
@@ -267,7 +211,6 @@ class HttpCacheManager {
     }
   }
 
-  late final _createServerLock = Lock();
   HttpCacheStreamCreatedCallback? _onStreamCreated;
   Directory get cacheDir => config.cacheDirectory;
   Iterable<HttpCacheStream> get allStreams => _streams.values;

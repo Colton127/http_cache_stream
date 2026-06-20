@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart';
 import 'package:http_cache_stream/http_cache_stream.dart';
 
-import '../../etc/callback_helpers.dart';
+import '../../etc/helpers.dart';
 
 /// Cache configuration for a single [HttpCacheStream].
 ///
@@ -122,7 +122,8 @@ class StreamCacheConfig implements CacheConfiguration {
   @override
   set rangeRequestSplitThreshold(int? value) {
     _useGlobalRangeRequestSplitThreshold = false;
-    _rangeRequestSplitThreshold = CacheConfiguration.validateRangeRequestSplitThreshold(value);
+    _rangeRequestSplitThreshold =
+        CacheConfiguration.validateRangeRequestSplitThreshold(value);
   }
 
   @override
@@ -163,7 +164,9 @@ class StreamCacheConfig implements CacheConfiguration {
     return _combineHeaders(
       _global.requestHeaders,
       _requestHeaders,
-      defaultHeaders: const {HttpHeaders.acceptEncodingHeader: 'identity'}, // Avoid compressed responses
+      defaultHeaders: const {
+        HttpHeaders.acceptEncodingHeader: 'identity'
+      }, // Avoid compressed responses
     );
   }
 

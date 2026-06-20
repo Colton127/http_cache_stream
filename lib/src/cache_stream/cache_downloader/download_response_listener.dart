@@ -50,9 +50,12 @@ class DownloadResponseListener {
     _completer.completeError(error);
   }
 
-  void pause() {
+  void pause({final bool flushBuffer = true}) {
     _timeoutTimer.reset();
     _subscription.pause();
+    if (flushBuffer) {
+      _buffer.flush();
+    }
   }
 
   void resume() {

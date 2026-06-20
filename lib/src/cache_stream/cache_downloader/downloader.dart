@@ -53,10 +53,14 @@ class Downloader {
           }
           checkActive();
           onHeaders(downloadStream.responseHeaders);
-          _done = await (_responseListener = DownloadResponseListener(sourceUrl, downloadStream, onData, streamConfig)).done;
-          _responseListener = null;
+          final responseListener = DownloadResponseListener(sourceUrl, downloadStream, onData, streamConfig);
+          _responseListener = responseListener;
+          try {
+            _done = await responseListener.done;
+          } finally {
+            _responseListener = null;
+          }
         } catch (e) {
-          _responseListener = null;
           downloadStream?.cancel();
           if (e is InvalidCacheException) {
             rethrow;
@@ -64,7 +68,7 @@ class Downloader {
             break;
           } else {
             onError(e);
-            await Future.delayed(const Duration(seconds: 5)); //Wait before retrying
+            await (_pauseCounter.isPaused ? _pauseCounter.onResume : Future.delayed(const Duration(seconds: 5)));
           }
         }
       }
@@ -78,15 +82,15 @@ class Downloader {
     final responseListener = _responseListener;
     if (responseListener != null) {
       _responseListener = null;
-      responseListener.cancel(exception ?? DownloadStoppedException(sourceUrl));
+      responseListener.cancel(exception ?? DownloadStoppedException(sourceUrl), flushBuffer: exception is! InvalidCacheException);
     }
     _pauseCounter.resume(force: true); //Break any pauses
   }
 
-  void pause() {
+  void pause({bool flushBuffer = true}) {
     if (_closed) return;
     _pauseCounter.pause();
-    _responseListener?.pause();
+    _responseListener?.pause(flushBuffer: flushBuffer);
   }
 
   void resume() {

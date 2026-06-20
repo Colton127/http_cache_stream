@@ -29,15 +29,6 @@ class CombinedDataStream extends Stream<List<int>> {
     final int? sourceLength,
     final StreamCacheConfig streamConfig,
   ) {
-    assert(() {
-      final cacheFileSize = cacheFiles.activeCacheFile().statSync().size;
-      if (cacheFileSize < dataStreamPosition) {
-        throw StateError(
-            'CombinedDataStream: cacheFileSize ($cacheFileSize) is less than dataStreamPosition ($dataStreamPosition)');
-      }
-      return true;
-    }());
-
     return CombinedDataStream._(
       CacheFileStream(
         StreamRange.validate(range.start, dataStreamPosition,

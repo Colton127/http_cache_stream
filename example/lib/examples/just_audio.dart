@@ -1,4 +1,4 @@
-//Example of how to use the just_audio package (https://pub.dev/packages/just_audio) to play audio files.
+//Example of how to use the just_audio package (https://pub.dev/packages/just_audio) to play audio files by manually creating a cache stream.
 
 import 'package:flutter/material.dart';
 import 'package:http_cache_stream/http_cache_stream.dart';
@@ -43,10 +43,9 @@ class _JustAudioExampleState extends State<JustAudioExample> {
   @override
   void dispose() {
     super.dispose();
-    _player.dispose().whenComplete(() {
-      return httpCacheStream
-          .dispose(); //Dispose the cache stream after the player is disposed
-    });
+    httpCacheStream
+        .release(); //Release the cache stream when the widget is disposed.
+    _player.dispose();
   }
 
   Stream<PositionData> get _positionDataStream =>

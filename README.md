@@ -21,22 +21,21 @@ Using http_cache_stream to simultaneously cache and stream a video file:
 ```dart
 import 'package:http_cache_stream/http_cache_stream.dart';
 
-// Initialize the cache manager
+// Initialize the cache manager once, at app startup
 await HttpCacheManager.init();
 
-// Create a stream for a specific URL
+// Get a local cache URL for any remote resource
 final sourceUrl = Uri.parse('https://example.com/video.mp4');
-final cacheStream = HttpCacheManager.instance.createStream(sourceUrl);
-
-// Get the local cache URL to pass to your media player
-final cacheUrl = cacheStream.cacheUrl;
+final cacheUrl = HttpCacheManager.instance.getCacheUrl(sourceUrl);
 // Example output: http://127.0.0.1:4612/example.com/video.mp4
 
-// Use with any player
-final videoPlayerController = VideoPlayerController.network(cacheUrl);
+// Pass it directly to your media player
+final videoPlayerController = VideoPlayerController.networkUrl(cacheUrl);
 await videoPlayerController.initialize();
 videoPlayerController.play();
 ```
+
+The cache stream is created and managed automatically — no lifecycle management required. For direct access to the `HttpCacheStream` instance (e.g., to monitor download progress or configure per-stream settings), use `createStream` instead. See [HttpCacheStream](#httpcachestream) below.
 
 See the example project to learn how to use http_cache_stream with [video_player](https://pub.dev/packages/video_player), [audioplayers](https://pub.dev/packages/audioplayers), and [just_audio](https://pub.dev/packages/just_audio)
 
@@ -85,54 +84,42 @@ See the example project for a full example.
 The central manager for all cache streams:
 
 ```dart
-// Initialize once
+// Initialize once, at app startup
 await HttpCacheManager.init();
 final cacheManager = HttpCacheManager.instance;
+
+// Get a cache URL — the recommended way to integrate with media players
+final cacheUrl = cacheManager.getCacheUrl(sourceUrl);
+
+// Pre-cache files:
+await cacheManager.preCacheUrl(Uri.parse('https://example.com/file.mp3'));
 
 // Configure global settings
 cacheManager.config.requestHeaders[HttpHeaders.userAgentHeader] = 'MyApp/1.0';
 
-// Create streams
-final cacheStream = cacheManager.createStream(url);
-
-// Manage cache
-await cacheManager.deleteCache(); // Clear inactive cache
+// Delete inactive cache files
+await cacheManager.deleteCache();
 ```
 
 ## HttpCacheStream
 
-Manages downloading, caching, and streaming for a specific URL:
+Provides direct access to the download, cache, and streaming state for a specific URL. Use `createStream` when you need to monitor progress or configure per-stream settings.
 
 ```dart
 final cacheStream = cacheManager.createStream(Uri.parse('https://example.com/file.mp3'));
 
-// Start download explicitly (optional)
+// Start download explicitly (optional — begins automatically on first request)
 cacheStream.download();
 
-// Get download progress
-cacheStream.progressStream.listen((progress) {
-  print('Download progress: ${(progress * 100).toStringAsFixed(1)}%');
+// Monitor CacheState for position and source length
+cacheStream.cacheStateStream.listen((state) {
+  print('${state.position} / ${state.sourceLength} bytes');
 });
 
-cacheStream.dispose(); // Release when done
-```
-
-## HttpCacheServer
-
-Creates a local proxy server that dynamically handles URLs from the same source. Ideal for HLS/DASH streaming where a master playlist references multiple segment files. Cache streams are automatically created and disposed.
-
-```dart
-// Create a server for a base URL 
-final sourceUri = Uri.parse('https://example.com/'); 
-final cacheServer = await cacheManager.createServer(sourceUri);
-
-// The URI of the cache server. Requests to this URI will be fulfilled from the source URI.
-final serverUri = cacheServer.uri;
-
-// Manually obtain a cache url
-final hlsCacheUrl = cacheServer.getCacheUrl(Uri.parse('https://example.com/video.m3u8'));
-
-cacheServer.dispose(); // Release when done
+// Release when done — the stream will be paused and eventually disposed
+// automatically according to StreamLifecycleConfig.
+// Call dispose() instead to tear down immediately.
+cacheStream.release();
 ```
 
 
@@ -174,6 +161,21 @@ globalConfig.requestHeaders[HttpHeaders.userAgentHeader] = 'MyApp/1.0';
 final cacheStream = cacheManager.createStream(Uri.parse('https://example.com/file.mp3'));
 cacheStream.config.copyCachedResponseHeaders = true;
 ```
+
+
+### Stream Lifecycle
+
+When `createStream` is used, call `release()` instead of `dispose()` to hand the stream back to the cache manager. The behavior after release is controlled by `StreamLifecycleConfig`:
+
+```dart
+// Configure globally (applies to all streams)
+HttpCacheManager.instance.config.lifecycleConfig = StreamLifecycleConfig(
+  pauseAfter: Duration(seconds: 10),   // Pause the download after 10s of inactivity
+  disposeAfter: Duration(minutes: 5),  // Fully dispose the stream after 5 minutes
+);
+```
+
+Call `dispose()` to tear down a stream immediately, bypassing the lifecycle configuration.
 
 
 ### Range Request Controls

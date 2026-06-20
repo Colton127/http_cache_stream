@@ -1,8 +1,12 @@
-import 'dart:convert';
 import 'dart:io';
 
+import 'package:http_cache_stream/src/etc/extensions/file_extensions.dart';
 import 'package:http_cache_stream/src/models/cache_files/cache_files.dart';
 import 'package:http_cache_stream/src/models/metadata/cached_response_headers.dart';
+
+import '../../etc/helpers.dart';
+import '../cache_state/cache_state.dart';
+import '../exceptions/invalid_cache_exceptions.dart';
 
 /// Metadata for a cached file.
 class CacheMetadata {
@@ -25,7 +29,8 @@ class CacheMetadata {
   static CacheMetadata? fromCacheFiles(final CacheFiles cacheFiles) {
     final metadataFile = cacheFiles.metadata;
     if (!metadataFile.existsSync()) return null;
-    final metadataJson = jsonDecode(metadataFile.readAsStringSync()) as Map<String, dynamic>;
+    final metadataJson =
+        jsonDecodeBytes(metadataFile.readAsBytesSync()) as Map<String, dynamic>;
     return CacheMetadata(
       cacheFiles,
       Uri.parse(metadataJson['Url']),
@@ -33,25 +38,29 @@ class CacheMetadata {
     );
   }
 
-  ///Returns the cache download progress as a percentage, rounded to 2 decimal places. Returns null if the source length is unknown. Returns 1.0 only if the cache file exists.
-  ///The progress reported here may be inaccurate if a download is ongoing. Use [progress] on [HttpCacheStream] to get the most accurate progress.
-  double? cacheProgress() {
+  Future<CacheState> cacheState() async {
     final sourceLength = this.sourceLength;
-    if (sourceLength == null) return null;
+    if (sourceLength == null) return const CacheState.zero();
 
-    if (isComplete) return 1.0;
+    final completeCacheSize = await cacheFile.lengthOrNull();
+    if (completeCacheSize != null) {
+      InvalidCacheSizeException.validate(
+          sourceUrl, completeCacheSize, sourceLength);
+      return CacheState.complete(completeCacheSize);
+    }
 
-    final partialCacheSize = partialCacheFile.statSync().size;
-    if (partialCacheSize <= 0) {
-      return 0.0;
+    final partialCacheSize = await partialCacheFile.lengthOrNull();
+    if (partialCacheSize == null || partialCacheSize <= 0) {
+      return const CacheState.zero();
     } else if (partialCacheSize == sourceLength) {
-      partialCacheFile.renameSync(cacheFile.path); //Rename the partial cache to the complete cache
-      return 1.0;
+      await partialCacheFile.rename(
+          cacheFile.path); //Rename the partial cache to the complete cache
+      return CacheState.complete(partialCacheSize);
     } else if (partialCacheSize > sourceLength) {
-      partialCacheFile.deleteSync(); //Reset the cache if the partial cache is larger than the source
-      return 0.0;
+      throw InvalidCacheSizeException(
+          sourceUrl, partialCacheSize, sourceLength);
     } else {
-      return ((partialCacheSize / sourceLength) * 100).floor() / 100; //Round to 2 decimal places
+      return CacheState.incomplete(partialCacheSize, sourceLength);
     }
   }
 

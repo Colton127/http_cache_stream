@@ -27,14 +27,12 @@ class DownloadStream extends Stream<List<int>> {
       request.headers[HttpHeaders.rangeHeader] = rangeRequest.header;
     }
 
-    final streamedResponse =
-        await config.httpClient.sendWithTimeout(request, config.requestTimeout);
+    final streamedResponse = await config.httpClient.sendWithTimeout(request, config.requestTimeout);
     try {
       if (rangeRequest == null) {
         HttpStatusCodeException.validateCompleteResponse(url, streamedResponse);
       } else {
-        HttpRangeException.validate(
-            url, rangeRequest, HttpRangeResponse.parse(streamedResponse));
+        HttpRangeException.validate(url, rangeRequest, HttpRangeResponse.parse(streamedResponse));
       }
       return DownloadStream(streamedResponse);
     } catch (e) {
@@ -67,8 +65,7 @@ class DownloadStream extends Stream<List<int>> {
   bool _listened = false;
   BaseResponse get baseResponse => _streamedResponse;
 
-  HttpRangeResponse? get responseRange =>
-      HttpRangeResponse.parse(_streamedResponse);
+  HttpRangeResponse? get responseRange => HttpRangeResponse.parse(_streamedResponse);
 
   int? get sourceLength {
     if (baseResponse.headers.containsKey(HttpHeaders.contentRangeHeader)) {

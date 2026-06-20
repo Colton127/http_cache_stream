@@ -14,15 +14,15 @@
 library;
 
 export 'src/cache_manager/http_cache_manager.dart';
-export 'src/cache_server/http_cache_server.dart';
 export 'src/cache_stream/http_cache_stream.dart';
 export 'src/models/cache_config/cache_config.dart';
 export 'src/models/cache_config/global_cache_config.dart';
 export 'src/models/cache_config/stream_cache_config.dart';
 export 'src/models/cache_config/stream_lifecycle_config.dart';
+export 'src/models/cache_files/cache_file_resolver.dart';
 export 'src/models/cache_files/cache_file_type.dart';
 export 'src/models/cache_files/cache_files.dart';
-export 'src/models/cache_files/cache_file_resolver.dart';
+export 'src/models/cache_state/cache_state.dart';
 export 'src/models/exceptions/http_exceptions.dart';
 export 'src/models/exceptions/invalid_cache_exceptions.dart';
 export 'src/models/exceptions/state_errors.dart';

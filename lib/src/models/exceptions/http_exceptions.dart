@@ -15,7 +15,7 @@ class DownloadStoppedException extends DownloadException {
 }
 
 class RequestTimedOutException extends DownloadException
-    implements TimeoutException {
+    implements TimeoutException, http.ClientException {
   @override
   final Duration duration;
   RequestTimedOutException(Uri uri, this.duration)
@@ -28,7 +28,7 @@ class RequestTimedOutException extends DownloadException
 }
 
 class ReadTimedOutException extends DownloadException
-    implements TimeoutException {
+    implements TimeoutException, http.ClientException {
   @override
   final Duration duration;
   ReadTimedOutException(Uri uri, this.duration)
