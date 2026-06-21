@@ -255,11 +255,13 @@ class HttpCacheStream {
   /// Prefer using [release] instead when the stream may be reused again
   /// Returns a future that completes when the stream is disposed.
   Future<void> dispose({final bool force = false}) {
+    _disposeRequested = true;
     _retainCounter.release(force: force);
     _performDispose();
     return _disposeCompleter.future;
   }
 
+  bool _disposeRequested = false; //If dispose() has been requested
   bool _disposing = false;
   void _performDispose() async {
     if (isDisposed || isRetained || _disposing) return;
@@ -447,6 +449,7 @@ class HttpCacheStream {
   /// as this method.
   void retain() {
     _checkDisposed();
+    _disposeRequested = false; //A new holder resurrects the stream
     _retainCounter.retain();
     _lifeCycleTimer?.cancel();
     _lifeCycleTimer = null;
@@ -462,6 +465,11 @@ class HttpCacheStream {
     _lifeCycleTimer?.cancel();
 
     if (!isRetained) {
+      if (_disposeRequested) {
+        _performDispose(); //Honor a pending dispose() instead of deferring to the lifecycle
+        return;
+      }
+
       final lifecycleConfig = config.lifecycleConfig;
 
       _lifeCycleTimer = Timer(lifecycleConfig.pauseAfter, () {
