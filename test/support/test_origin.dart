@@ -53,8 +53,11 @@ class TestOrigin {
   String? lastRangeHeader;
   final List<String?> rangeHeaders = [];
 
-  Uri get baseUri =>
-      Uri(scheme: 'http', host: _server.address.host, port: _server.port);
+  // Reported as `localhost` (not the bound `127.0.0.1`) so the source host
+  // differs from the cache server's loopback host; otherwise the package treats
+  // the source URL as an already-encoded cache URL. `localhost` still resolves
+  // to loopback where the origin is listening.
+  Uri get baseUri => Uri(scheme: 'http', host: 'localhost', port: _server.port);
 
   /// A source URL on this origin for the given [path] (e.g. `/media/file.mp3`).
   Uri url(String path) => baseUri.replace(path: path);

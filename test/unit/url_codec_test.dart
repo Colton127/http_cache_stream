@@ -6,6 +6,10 @@ void main() {
 
   setUp(() async {
     server = await LocalCacheServer.init(port: 0);
+    // Attach a listener so the underlying keep-alive stream has a subscriber;
+    // without it, close() blocks on the buffered done event during teardown.
+    // No requests are made in these tests, so the callback is never invoked.
+    server.start((_) => throw UnimplementedError());
   });
 
   tearDown(() async {

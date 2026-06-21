@@ -92,9 +92,12 @@ void main() {
   test('waitForPosition fails if the sink closes before reaching it', () async {
     final sink = BufferedIOSink(tmp('closed.bin'), 0);
     sink.add(Payload.generate(1024));
-    final f = sink.waitForPosition(10 * 1024 * 1024);
+    // Attach the matcher before closing: close() fails the waiter synchronously,
+    // and an unobserved error future would otherwise crash the test.
+    final expectation = expectLater(
+        sink.waitForPosition(10 * 1024 * 1024), throwsA(isA<StateError>()));
     await sink.close();
-    await expectLater(f, throwsA(isA<StateError>()));
+    await expectation;
   });
 
   test('adding to a closed sink throws', () async {
