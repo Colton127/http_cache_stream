@@ -61,14 +61,19 @@ class CacheTestHarness {
     String? range,
   }) async {
     final request = await _client.openUrl(method, url);
+    // Don't pool the connection. The cache server finishes a response by
+    // destroying the socket (an abortive close); with keep-alive the client
+    // can hang waiting to reuse a connection the server already tore down.
+    // Reading until close also makes completed-cache (instant) responses robust.
+    request.persistentConnection = false;
     if (range != null) {
       request.headers.set(HttpHeaders.rangeHeader, range);
     }
     final response = await request.close();
     final builder = BytesBuilder(copy: false);
-    await for (final chunk in response) {
-      builder.add(chunk);
-    }
+    // Fail fast with a clear message rather than the 30s framework timeout if a
+    // response ever stalls.
+    await response.timeout(const Duration(seconds: 15)).forEach(builder.add);
     return FetchResult(
         response.statusCode, builder.takeBytes(), response.headers);
   }
