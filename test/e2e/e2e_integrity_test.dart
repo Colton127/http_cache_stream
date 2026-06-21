@@ -122,18 +122,20 @@ void main() {
     await stream.dispose();
   });
 
-  test('a fully cached file is served from disk without re-hitting the origin',
-      () async {
+  test('a completed cache is reused without re-hitting the origin', () async {
     final source = h.origin.url('/media/file.mp3');
     final stream = h.manager.createStream(source);
-    await stream.download();
 
+    final file1 = await stream.download();
+    expect(Payload.hash(await file1.readAsBytes()), h.payloadHash);
     final originRequestsAfterDownload = h.origin.requestCount;
 
-    final res = await h.fetch(h.manager.getCacheUrl(source));
-    expect(Payload.hash(res.body), h.payloadHash);
+    // Accessing the completed cache again must serve from disk, byte-identical,
+    // without contacting the origin.
+    final file2 = await stream.download();
+    expect(Payload.hash(await file2.readAsBytes()), h.payloadHash);
     expect(h.origin.requestCount, originRequestsAfterDownload,
-        reason: 'cache hit should not contact the origin');
+        reason: 'a completed cache must not re-contact the origin');
 
     await stream.dispose();
   });

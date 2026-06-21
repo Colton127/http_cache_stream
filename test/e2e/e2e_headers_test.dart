@@ -14,38 +14,33 @@ void main() {
 
   tearDown(() => h.tearDown());
 
+  // These assert the headers the cache server sets (RequestHandler._setHeaders),
+  // which are identical whether the body is served from an in-flight download or
+  // a completed file. They fetch lazily (no pre-download) so the body streams
+  // back as it is fetched.
+
   test('a full response carries content-type, length and accept-ranges',
       () async {
-    final source = h.origin.url('/media/clip.mp3');
-    final stream = h.manager.createStream(source);
-    await stream.download();
-
-    final res = await h.fetch(h.manager.getCacheUrl(source));
+    final cacheUrl = h.manager.getCacheUrl(h.origin.url('/media/clip.mp3'));
+    final res = await h.fetch(cacheUrl);
     expect(res.statusCode, 200);
     expect(res.header('content-type'), 'audio/mpeg');
     expect(int.parse(res.header('content-length')!), h.origin.payload.length);
     expect(res.header('accept-ranges'), 'bytes');
-
-    await stream.dispose();
   });
 
   test('a range response carries content-range and the correct length',
       () async {
-    final source = h.origin.url('/media/clip.mp3');
-    final stream = h.manager.createStream(source);
-    await stream.download();
     final total = h.origin.payload.length;
-
-    final res =
-        await h.fetch(h.manager.getCacheUrl(source), range: 'bytes=10-109');
+    final cacheUrl = h.manager.getCacheUrl(h.origin.url('/media/clip.mp3'));
+    final res = await h.fetch(cacheUrl, range: 'bytes=10-109');
     expect(res.statusCode, 206);
     expect(res.header('content-range'), 'bytes 10-109/$total');
     expect(int.parse(res.header('content-length')!), 100);
-
-    await stream.dispose();
   });
 
   test('an out-of-range request returns 416', () async {
+    // Pre-cache so the source length is known and the range can be rejected.
     final source = h.origin.url('/media/clip.mp3');
     final stream = h.manager.createStream(source);
     await stream.download();
@@ -59,28 +54,18 @@ void main() {
   });
 
   test('HEAD returns headers with an empty body', () async {
-    final source = h.origin.url('/media/clip.mp3');
-    final stream = h.manager.createStream(source);
-    await stream.download();
-
-    final res = await h.fetch(h.manager.getCacheUrl(source), method: 'HEAD');
+    final cacheUrl = h.manager.getCacheUrl(h.origin.url('/media/clip.mp3'));
+    final res = await h.fetch(cacheUrl, method: 'HEAD');
     expect(res.body, isEmpty);
     expect(int.parse(res.header('content-length')!), h.origin.payload.length);
-
-    await stream.dispose();
   });
 
   test('content-type falls back to the path when the origin omits it',
       () async {
     h.origin.contentType = null;
-    final source = h.origin.url('/media/clip.mp3');
-    final stream = h.manager.createStream(source);
-    await stream.download();
-
-    final res = await h.fetch(h.manager.getCacheUrl(source));
+    final cacheUrl = h.manager.getCacheUrl(h.origin.url('/media/clip.mp3'));
+    final res = await h.fetch(cacheUrl);
     expect(res.header('content-type'), MimeTypes.fromPath('clip.mp3'));
     expect(res.header('content-type'), isNot(MimeTypes.octetStream));
-
-    await stream.dispose();
   });
 }

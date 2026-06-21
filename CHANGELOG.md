@@ -5,6 +5,7 @@ This release significantly simplifies cache management. A new `getCacheUrl` API 
 ### Breaking Changes
 
 - **`HttpCacheServer` has been removed.** Use `HttpCacheManager.getCacheUrl` instead. It covers all previous use cases, including HLS/DASH and other dynamic URL patterns, with full lifecycle automation.
+- **`InvalidCacheLengthException` has been renamed to `InvalidCacheSizeException`**, which now exposes the expected and actual cache size.
 
 ### New Features
 
@@ -22,10 +23,6 @@ This release significantly simplifies cache management. A new `getCacheUrl` API 
 ### Improvements
 
 - Cache headers are now read using async I/O.
-
-## 0.0.7
-
-* Renamed `InvalidCacheLengthException` to `InvalidCacheSizeException` and exposed expected/actual size.
 
 ## 0.0.6
 * Add `onStreamCreated` callback to `HttpCacheManager`.
