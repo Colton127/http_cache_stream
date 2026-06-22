@@ -5,7 +5,8 @@ import 'dart:typed_data';
 /// An IO sink that supports adding data while flushing to disk asynchronously.
 class BufferedIOSink {
   final File file;
-  BufferedIOSink(this.file, int initialPosition) : _flushedBytes = initialPosition;
+  BufferedIOSink(this.file, int initialPosition)
+      : _flushedBytes = initialPosition;
   int _flushedBytes;
   final _buffer = BytesBuilder(copy: false);
   RandomAccessFile? _openedRAF;
@@ -58,16 +59,20 @@ class BufferedIOSink {
   /// Returns a [Future] that completes once [flushedBytes] reaches or exceeds [minFlushedBytes].
   /// Completes immediately if the position is already reached.
   /// Fails if the sink is closed or a flush error occurs before the position is reached.
-  Future<void> waitForPosition(int minFlushedBytes, [Duration timeout = const Duration(seconds: 30)]) {
+  Future<void> waitForPosition(int minFlushedBytes,
+      [Duration timeout = const Duration(seconds: 30)]) {
     if (_flushedBytes >= minFlushedBytes) return Future.value();
     if (_isClosed) {
-      return Future.error(StateError('BufferedIOSink closed before reaching position $minFlushedBytes'));
+      return Future.error(StateError(
+          'BufferedIOSink closed before reaching position $minFlushedBytes'));
     }
     final completer = Completer<void>();
     _positionWaiters.add((position: minFlushedBytes, completer: completer));
     return completer.future.timeout(timeout, onTimeout: () {
       _positionWaiters.removeWhere((w) => w.completer == completer);
-      throw TimeoutException('Timeout while waiting for flushedBytes to reach $minFlushedBytes', timeout);
+      throw TimeoutException(
+          'Timeout while waiting for flushedBytes to reach $minFlushedBytes',
+          timeout);
     });
   }
 

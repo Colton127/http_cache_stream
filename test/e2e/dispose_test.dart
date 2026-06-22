@@ -20,7 +20,8 @@ void main() {
     final stream = h.manager.createStream(h.origin.url('/a.mp3')); // count 1
     stream.retain(); // simulate an in-flight request holding it: count 2
 
-    final disposing = stream.dispose(); // count 1: still retained, completes later
+    final disposing =
+        stream.dispose(); // count 1: still retained, completes later
     expect(stream.isDisposed, isFalse);
 
     stream.release(); // count 0: must honor the pending dispose now

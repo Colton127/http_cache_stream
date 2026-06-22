@@ -36,7 +36,8 @@ void main() {
 
   group('HttpRangeResponse formatting', () {
     test('header round-trips with a known total', () {
-      expect(HttpRangeResponse(0, 99, sourceLength: 500).header, 'bytes 0-99/500');
+      expect(
+          HttpRangeResponse(0, 99, sourceLength: 500).header, 'bytes 0-99/500');
     });
 
     test('header uses * for unknown total', () {

@@ -38,7 +38,8 @@ void main() {
     });
 
     test('query string is preserved', () {
-      expectRoundTrip(Uri.parse('https://cdn.example.com/v.m3u8?token=abc&x=1'));
+      expectRoundTrip(
+          Uri.parse('https://cdn.example.com/v.m3u8?token=abc&x=1'));
     });
 
     test('multi-segment path is preserved', () {
@@ -55,15 +56,16 @@ void main() {
 
     test('a foreign URL does not validate as a cache URL', () {
       expect(
-        server.validateCacheUrl(Uri.parse('http://127.0.0.1:9/not/a/cache/url')),
+        server
+            .validateCacheUrl(Uri.parse('http://127.0.0.1:9/not/a/cache/url')),
         isFalse,
       );
     });
 
     test('decoding a non-cache URI returns null', () {
       // Too few path segments to encode a source scheme + host.
-      expect(server.decodeSourceUrl(server.serverUri.replace(path: '/x')),
-          isNull);
+      expect(
+          server.decodeSourceUrl(server.serverUri.replace(path: '/x')), isNull);
     });
   });
 }

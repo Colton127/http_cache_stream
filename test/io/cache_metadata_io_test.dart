@@ -98,8 +98,8 @@ void main() {
     });
 
     test('returns null for a missing or empty file', () async {
-      expect(CachedResponseHeaders.fromFile(File('${dir.path}/nope.bin')),
-          isNull);
+      expect(
+          CachedResponseHeaders.fromFile(File('${dir.path}/nope.bin')), isNull);
       final empty = File('${dir.path}/empty.bin');
       await empty.writeAsBytes(Uint8List(0));
       expect(CachedResponseHeaders.fromFile(empty), isNull);

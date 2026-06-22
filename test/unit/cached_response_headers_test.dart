@@ -7,12 +7,14 @@ import 'package:flutter_test/flutter_test.dart';
 /// Builds [CachedResponseHeaders] from a synthetic HTTP response. Header keys
 /// must be lowercase to match the `HttpHeaders.*` constants the package looks up.
 CachedResponseHeaders headers(Map<String, String> map, {int status = 200}) {
-  return CachedResponseHeaders.fromBaseResponse(http.Response('', status, headers: map));
+  return CachedResponseHeaders.fromBaseResponse(
+      http.Response('', status, headers: map));
 }
 
 void main() {
   group('essential header extraction', () {
-    test('content-length, content-type, accept-ranges, etag, last-modified', () {
+    test('content-length, content-type, accept-ranges, etag, last-modified',
+        () {
       final lm = DateTime.utc(2024, 1, 1, 12);
       final h = headers({
         'content-length': '500',

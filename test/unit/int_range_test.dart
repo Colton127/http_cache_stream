@@ -52,7 +52,8 @@ void main() {
       ]);
     });
 
-    test('an open-ended range sorts after a closed one with the same start', () {
+    test('an open-ended range sorts after a closed one with the same start',
+        () {
       expect(const IntRange(0, null).compareTo(const IntRange(0, 100)), 1);
       expect(const IntRange(0, 100).compareTo(const IntRange(0, null)), -1);
     });

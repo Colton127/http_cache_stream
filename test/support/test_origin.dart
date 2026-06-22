@@ -153,8 +153,8 @@ class TestOrigin {
       response.headers.set(HttpHeaders.etagHeader, etag!);
     }
     if (lastModified != null) {
-      response.headers.set(
-          HttpHeaders.lastModifiedHeader, HttpDate.format(lastModified!));
+      response.headers
+          .set(HttpHeaders.lastModifiedHeader, HttpDate.format(lastModified!));
     }
     if (cacheControl != null) {
       response.headers.set(HttpHeaders.cacheControlHeader, cacheControl!);

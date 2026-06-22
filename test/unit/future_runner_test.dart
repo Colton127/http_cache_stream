@@ -27,7 +27,8 @@ void main() {
     expect(calls, 1);
   });
 
-  test('clears the in-flight future after success so it can run again', () async {
+  test('clears the in-flight future after success so it can run again',
+      () async {
     final runner = FutureRunner<int>();
     expect(await runner.run(() async => 1), 1);
     expect(runner.isRunning, isFalse);
