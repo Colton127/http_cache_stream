@@ -1,9 +1,8 @@
-//Example of how to use the audioplayers package (https://pub.dev/packages/audioplayers) to play audio files.
+//Example of how to use the audioplayers package (https://pub.dev/packages/audioplayers) to play audio files
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:http_cache_stream/http_cache_stream.dart';
-import 'package:http_cache_stream_example/widgets/cache_progress_bar.dart';
 import 'package:http_cache_stream_example/widgets/seek_bar.dart';
 import 'package:rxdart/rxdart.dart';
 
@@ -17,9 +16,6 @@ class AudioPlayersExample extends StatefulWidget {
 
 class _AudioPlayersExampleState extends State<AudioPlayersExample> {
   final _player = AudioPlayer();
-  late final httpCacheStream = HttpCacheManager.instance.createStream(
-    widget.sourceUrl,
-  );
 
   @override
   void initState() {
@@ -28,18 +24,15 @@ class _AudioPlayersExampleState extends State<AudioPlayersExample> {
   }
 
   void _init() async {
-    final cachedUrl = httpCacheStream.cacheUrl.toString();
-    _player.play(UrlSource(cachedUrl));
-    print('Playing from: $cachedUrl | $httpCacheStream');
+    final cachedUrl = HttpCacheManager.instance.getCacheUrl(widget.sourceUrl);
+    print('Playing from: $cachedUrl');
+    _player.play(UrlSource(cachedUrl.toString()));
   }
 
   @override
   void dispose() {
     super.dispose();
-    _player.dispose().whenComplete(() {
-      return httpCacheStream
-          .dispose(); //Dispose the cache stream after the player is disposed
-    });
+    _player.dispose();
   }
 
   Stream<PositionData> get _positionDataStream =>
@@ -71,7 +64,6 @@ class _AudioPlayersExampleState extends State<AudioPlayersExample> {
             );
           },
         ),
-        CacheProgressBar(httpCacheStream),
       ],
     );
   }

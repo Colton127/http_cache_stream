@@ -1,3 +1,29 @@
+## 0.1.0
+
+This release significantly simplifies cache management. A new `getCacheUrl` API automates the full lifecycle of cache streams, eliminating the need to create or manage `HttpCacheStream` instances for most integrations.
+
+### Breaking Changes
+
+- **`HttpCacheServer` has been removed.** Use `HttpCacheManager.getCacheUrl` instead. It covers all previous use cases, including HLS/DASH and other dynamic URL patterns, with full lifecycle automation.
+- **`InvalidCacheLengthException` has been renamed to `InvalidCacheSizeException`**, which now exposes the expected and actual cache size.
+
+### New Features
+
+**`HttpCacheManager`**
+
+- Added `getCacheUrl(Uri sourceUrl)`. Returns a local cache URL that can be passed directly to any media player. Cache streams are created lazily on first request and their lifecycle is managed automatically by the cache manager.
+- Added an optional `port` parameter to `HttpCacheManager.init`. Specifying a custom port allows cache urls to work across app restarts.
+
+**`HttpCacheStream`**
+
+- Added `release()`. Hands the stream back to the cache manager for lifecycle-managed teardown, governed by `StreamLifecycleConfig`. Use `release()` in place of `dispose()` when the stream may be reused. `dispose()` continues to work as before and bypasses the lifecycle configuration.
+- Added `CacheState`, a richer alternative to the plain progress value. It tracks both the current cache position (bytes on disk) and the total source length. Access the latest snapshot via `cacheStream.cacheState`, or subscribe to changes via `cacheStream.cacheStateStream`.
+- Added `StreamLifecycleConfig` to `CacheConfiguration`. Controls the inactive-stream behavior applied after `release()` is called. By default: downloads are paused after 10 seconds of inactivity, cancelled after the configured `readTimeout`, and the stream is fully disposed after 5 minutes.
+
+### Improvements
+
+- Cache headers are now read using async I/O.
+
 ## 0.0.6
 * Add `onStreamCreated` callback to `HttpCacheManager`.
 

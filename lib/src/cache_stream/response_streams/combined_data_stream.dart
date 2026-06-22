@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import '../../etc/extensions/stream_extensions.dart';
+import '../../models/cache_config/stream_cache_config.dart';
 import '../../models/cache_files/cache_files.dart';
-import '../../models/config/stream_cache_config.dart';
 import '../../models/exceptions/stream_response_exceptions.dart';
 import '../../models/stream_requests/int_range.dart';
 import '../../models/stream_response/stream_response_range.dart';
@@ -29,15 +29,6 @@ class CombinedDataStream extends Stream<List<int>> {
     final int? sourceLength,
     final StreamCacheConfig streamConfig,
   ) {
-    assert(() {
-      final cacheFileSize = cacheFiles.activeCacheFile().statSync().size;
-      if (cacheFileSize < dataStreamPosition) {
-        throw StateError(
-            'CombinedDataStream: cacheFileSize ($cacheFileSize) is less than dataStreamPosition ($dataStreamPosition)');
-      }
-      return true;
-    }());
-
     return CombinedDataStream._(
       CacheFileStream(
         StreamRange.validate(range.start, dataStreamPosition,

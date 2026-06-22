@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import '../../etc/extensions/file_extensions.dart';
-import '../../etc/extensions/list_extensions.dart';
+import 'package:http_cache_stream/src/etc/extensions/file_extensions.dart';
+
+import '../../models/cache_config/stream_cache_config.dart';
 import '../../models/cache_files/cache_files.dart';
-import '../../models/config/stream_cache_config.dart';
 import '../../models/exceptions/http_exceptions.dart';
 import '../../models/exceptions/invalid_cache_exceptions.dart';
 import '../../models/metadata/cache_metadata.dart';
@@ -15,19 +15,24 @@ import 'buffered_io_sink.dart';
 import 'downloader.dart';
 
 class CacheDownloader {
-  final int startPosition;
   final CacheFiles _cacheFiles;
   final Downloader _downloader;
   final BufferedIOSink _sink;
   final _streamController = StreamController<List<int>>.broadcast(sync: true);
   final _completer = Completer<void>();
-  CacheDownloader._(final CacheMetadata cacheMetadata, this.startPosition,
-      this._downloader, this._sink)
-      : _cacheFiles = cacheMetadata.cacheFiles,
-        _cachedHeaders = cacheMetadata.headers;
-  int _receivedBytes = 0; //Total bytes received from downloader
+  int _position;
   int _pendingStreamBytes =
       0; //Bytes received but not added to stream yet. These bytes will be added within the current event loop.
+  CachedResponseHeaders? _cachedHeaders;
+  bool _paused = false;
+  CacheDownloader._(
+    final CacheMetadata cacheMetadata,
+    final int startPosition,
+    this._downloader,
+  )   : _cacheFiles = cacheMetadata.cacheFiles,
+        _position = startPosition,
+        _sink = BufferedIOSink(cacheMetadata.partialCacheFile, startPosition),
+        _cachedHeaders = startPosition > 0 ? cacheMetadata.headers : null;
 
   factory CacheDownloader.construct(
     final CacheMetadata cacheMetadata,
@@ -36,7 +41,7 @@ class CacheDownloader {
     final partialCacheFile = cacheMetadata.partialCacheFile;
     int startPosition = 0;
 
-    if (cacheMetadata.headers?.canResumeDownload() == true) {
+    if (cacheMetadata.headers?.canResumeDownload() ?? false) {
       startPosition = partialCacheFile.lengthSyncOrNull() ?? 0;
     }
 
@@ -44,7 +49,6 @@ class CacheDownloader {
       cacheMetadata,
       startPosition,
       Downloader(cacheMetadata.sourceUrl, cacheConfig),
-      BufferedIOSink(partialCacheFile, startPosition),
     );
   }
 
@@ -52,7 +56,7 @@ class CacheDownloader {
     required final void Function(Object e) onError,
     required final void Function(CachedResponseHeaders headers) onHeaders,
     required final void Function(int position) onPosition,
-    required final Future<void> Function() onComplete,
+    required final Future<void> Function(int sourceLength) onComplete,
   }) async {
     final int maxBufferSize = _downloader.streamConfig.maxBufferSize;
 
@@ -65,13 +69,12 @@ class CacheDownloader {
             _streamController.addError(error);
           },
           onHeaders: (cacheHttpHeaders) {
-            if (downloadPosition > 0) {
-              final prevHeaders = _cachedHeaders;
-              if (prevHeaders != null &&
-                  !CachedResponseHeaders.validateCacheResponse(
-                      prevHeaders, cacheHttpHeaders)) {
-                throw CacheSourceChangedException(sourceUrl);
-              }
+            final prevHeaders = _cachedHeaders;
+            if (prevHeaders != null &&
+                downloadPosition > 0 &&
+                !CachedResponseHeaders.validateCacheResponse(
+                    prevHeaders, cacheHttpHeaders)) {
+              throw CacheSourceChangedException(sourceUrl);
             }
 
             _cachedHeaders = cacheHttpHeaders;
@@ -80,26 +83,31 @@ class CacheDownloader {
                 downloadPosition); //Emit current position to update progress and process queued requests
           },
           onData: (data) {
-            assert(data.isNotEmpty);
-            assert(!_isProcessingRequests);
-            _receivedBytes += data.length;
+            _position += data.length;
             _sink.add(data);
-
-            if (_sink.bufferSize > maxBufferSize) {
-              _downloader
-                  .pause(); //Pause upstream if we are receiving more data than we can write
-              _sink.flush().then((_) => _downloader.resume(),
-                  onError: cancel); //Resume upstream after flushing
-            } else if (!_sink.isFlushing) {
-              _sink.flush().catchError(cancel);
-            }
-
             _pendingStreamBytes = data.length;
             onPosition(
                 downloadPosition); //Emit current position to update progress and synchronously process queued requests
             _streamController.add(
                 data); //Add after processing queued requests. Requests may be fulfilled from the data.
             _pendingStreamBytes = 0;
+
+            if (_sink.bufferSize > maxBufferSize) {
+              _downloader
+                  .pause(); //Pause upstream if we are receiving more data than we can write
+              _sink.flush().then(
+                (_) {
+                  _downloader.resume();
+                },
+                onError: (e) {
+                  cancel(e);
+                },
+              );
+            } else if (!_sink.isFlushing) {
+              _sink.flush().catchError((e) {
+                cancel(e);
+              });
+            }
           },
         );
       } on InvalidCacheException {
@@ -116,17 +124,17 @@ class CacheDownloader {
         onError(e);
       }
       final partialCacheLength = (await _sink.file.stat()).size;
+
+      InvalidCacheSizeException.validate(
+        sourceUrl,
+        partialCacheLength,
+        downloadPosition,
+      );
+
       final sourceLength = _cachedHeaders?.sourceLength ??
           (_downloader.isDone ? downloadPosition : null);
-      if (partialCacheLength == sourceLength) {
-        await onComplete();
-      } else if (partialCacheLength != downloadPosition &&
-          (partialCacheLength != -1 || downloadPosition != 0)) {
-        throw InvalidCacheLengthException(
-          sourceUrl,
-          partialCacheLength,
-          downloadPosition,
-        );
+      if (sourceLength != null && partialCacheLength == sourceLength) {
+        await onComplete(sourceLength);
       }
     } finally {
       if (!_completer.isCompleted) {
@@ -145,107 +153,76 @@ class CacheDownloader {
     }
   }
 
-  /// Cancels the download and closes the stream. An error must be provided to indicate the reason for cancellation.
-  Future<void> cancel(final Object error) {
-    _downloader.close(error);
+  /// Cancels the download and closes the stream. An optional [error] can be provided to indicate the reason for cancellation.
+  Future<void> cancel([Object? exception]) async {
+    _downloader.close(exception);
+    _paused = false;
     return _completer.future;
   }
 
+  void pause() {
+    if (_paused || !_downloader.isActive) return;
+    _paused = true;
+    _downloader.pause();
+  }
+
+  void resume() {
+    if (!_paused) return;
+    _paused = false;
+    _downloader.resume();
+  }
+
   bool processRequest(final StreamRequest request) {
-    if (request.start > downloadPosition) {
-      return false;
-    }
-    final cachedHeaders = _cachedHeaders;
-    if (cachedHeaders == null) {
-      return false; //Headers required to process request
-    }
+    assert(!_paused);
+    if (request.start > downloadPosition) return false;
+    if (!_downloader.isActive) return false;
+    final headers = _cachedHeaders;
+    if (headers == null) return false;
 
-    final requestEnd = request.end ?? sourceLength;
-    if (requestEnd != null && filePosition >= requestEnd) {
-      ///We have enough buffered data in the file to fulfill the request
-      request.complete(() =>
-          StreamResponse.fromFile(request.range, _cacheFiles, cachedHeaders));
-      return true;
-    }
-    if (!_downloader.isActive) {
-      return false; //Cannot fulfill request end if downloader is not active
-    }
-    if (request.start >= streamPosition) {
-      ///We can fulfill the request from the stream alone
-      request.complete(
-        () => StreamResponse.fromStream(
+    request.complete(() async {
+      if (request.start >= streamPosition) {
+        return StreamResponse.fromStream(
           request.range,
-          cachedHeaders,
+          headers,
           _streamController.stream,
           streamPosition,
           _downloader.streamConfig,
-        ),
-      );
-      return true;
-    } else if (filePosition == streamPosition) {
-      ///File and stream are already aligned, we can fulfill the request by combining them
-      request.complete(
-        () => StreamResponse.fromFileAndStream(
-          request.range,
-          cachedHeaders,
-          _cacheFiles,
-          _streamController.stream,
-          streamPosition,
-          _downloader.streamConfig,
-        ),
-      );
-      return true;
-    } else {
-      //Synchronize file and stream positions before fulfilling the request
-      _processCombinedRequests(request, cachedHeaders);
-      return true;
-    }
-  }
-
-  ///Processes requests that start before the current download position by combining file and stream data
-  void _processCombinedRequests(
-      final StreamRequest request, final CachedResponseHeaders headers) async {
-    _processingRequests.add(request);
-    if (_isProcessingRequests) return;
-    _isProcessingRequests = true;
-
-    try {
-      _downloader
-          .pause(); //Pause download. The download stream must begin where the file ends.
-      await _sink.flush(); //Ensure all data is written to the cache file
-
-      if (_downloader.isClosed) {
-        throw DownloadStoppedException(sourceUrl);
-      }
-      _processingRequests.processAndRemove((request) {
-        request.complete(
-          () => StreamResponse.fromFileAndStream(
-            request.range,
-            headers,
-            _cacheFiles,
-            _streamController.stream,
-            streamPosition,
-            _downloader.streamConfig,
-          ),
         );
-      });
-    } catch (e) {
-      _processingRequests.processAndRemove((request) {
-        request.completeError(e);
-      });
-    } finally {
-      _isProcessingRequests = false;
-      _downloader.resume();
-    }
+      }
+
+      final effectiveEnd = request.end ?? headers.sourceLength;
+      if (effectiveEnd != null && downloadPosition >= effectiveEnd) {
+        await _sink.waitForPosition(effectiveEnd);
+        return StreamResponse.fromFile(request.range, _cacheFiles, headers);
+      }
+
+      final dataStreamPosition = streamPosition;
+      final combinedCacheResponse = StreamResponse.combined(
+        request.range,
+        headers,
+        _cacheFiles,
+        _streamController.stream,
+        dataStreamPosition,
+        _downloader.streamConfig,
+      );
+
+      try {
+        await _sink.waitForPosition(dataStreamPosition);
+        return combinedCacheResponse;
+      } catch (_) {
+        combinedCacheResponse.cancel();
+        rethrow;
+      }
+    });
+
+    return true;
   }
 
-  bool _isProcessingRequests = false;
-  final List<StreamRequest> _processingRequests = [];
   int? get sourceLength => _cachedHeaders?.sourceLength;
-  int get downloadPosition => startPosition + _receivedBytes;
+  int get downloadPosition => _position;
   int get streamPosition => downloadPosition - _pendingStreamBytes;
-  int get filePosition => startPosition + _sink.flushedBytes;
+  int get filePosition => _sink.flushedBytes;
   Uri get sourceUrl => _downloader.sourceUrl;
   bool get isClosed => _completer.isCompleted;
-  CachedResponseHeaders? _cachedHeaders;
+  bool get isPaused => _paused;
 }

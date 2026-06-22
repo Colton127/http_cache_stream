@@ -1,7 +1,7 @@
 import 'dart:async';
 
+import '../cache_config/stream_cache_config.dart';
 import '../cache_files/cache_files.dart';
-import '../config/stream_cache_config.dart';
 import '../metadata/cached_response_headers.dart';
 import '../stream_requests/int_range.dart';
 import 'cache_download_stream_response.dart';
@@ -69,7 +69,7 @@ abstract class StreamResponse {
     );
   }
 
-  factory StreamResponse.fromFileAndStream(
+  factory StreamResponse.combined(
     final IntRange range,
     final CachedResponseHeaders headers,
     final CacheFiles cacheFiles,
@@ -77,33 +77,14 @@ abstract class StreamResponse {
     final int dataStreamPosition,
     final StreamCacheConfig streamConfig,
   ) {
-    final effectiveEnd = range.end ?? headers.sourceLength;
-    if (effectiveEnd != null && dataStreamPosition >= effectiveEnd) {
-      //We can fully serve the request from the file
-      return StreamResponse.fromFile(
-        range,
-        cacheFiles,
-        headers,
-      );
-    } else if (range.start >= dataStreamPosition) {
-      //We can fully serve the request from the cache stream
-      return StreamResponse.fromStream(
-        range,
-        headers,
-        dataStream,
-        dataStreamPosition,
-        streamConfig,
-      );
-    } else {
-      return CombinedCacheStreamResponse.construct(
-        range,
-        headers,
-        cacheFiles,
-        dataStream,
-        dataStreamPosition,
-        streamConfig,
-      );
-    }
+    return CombinedCacheStreamResponse.construct(
+      range,
+      headers,
+      cacheFiles,
+      dataStream,
+      dataStreamPosition,
+      streamConfig,
+    );
   }
 
   ///The length of the content in the response. This may be different from the source length.

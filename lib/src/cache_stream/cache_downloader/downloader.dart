@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:http_cache_stream/src/cache_stream/response_streams/download_stream.dart';
 import 'package:http_cache_stream/src/models/exceptions/invalid_cache_exceptions.dart';
 
-import '../../etc/pause_counter.dart';
-import '../../models/config/stream_cache_config.dart';
+import '../../etc/counters/pause_counter.dart';
+import '../../models/cache_config/stream_cache_config.dart';
 import '../../models/exceptions/http_exceptions.dart';
 import '../../models/metadata/cached_response_headers.dart';
 import '../../models/stream_requests/int_range.dart';
@@ -56,12 +56,15 @@ class Downloader {
           }
           checkActive();
           onHeaders(downloadStream.responseHeaders);
-          _done = await (_responseListener = DownloadResponseListener(
-                  sourceUrl, downloadStream, onData, streamConfig))
-              .done;
-          _responseListener = null;
+          final responseListener = DownloadResponseListener(
+              sourceUrl, downloadStream, onData, streamConfig);
+          _responseListener = responseListener;
+          try {
+            _done = await responseListener.done;
+          } finally {
+            _responseListener = null;
+          }
         } catch (e) {
-          _responseListener = null;
           downloadStream?.cancel();
           if (e is InvalidCacheException) {
             rethrow;
@@ -69,8 +72,9 @@ class Downloader {
             break;
           } else {
             onError(e);
-            await Future.delayed(
-                const Duration(seconds: 5)); //Wait before retrying
+            await (_pauseCounter.isPaused
+                ? _pauseCounter.onResume
+                : Future.delayed(const Duration(seconds: 5)));
           }
         }
       }
@@ -79,20 +83,21 @@ class Downloader {
     }
   }
 
-  void close([Object? error]) {
+  void close([Object? exception]) {
     _closed = true;
     final responseListener = _responseListener;
     if (responseListener != null) {
       _responseListener = null;
-      responseListener.cancel(error ?? DownloadStoppedException(sourceUrl));
+      responseListener.cancel(exception ?? DownloadStoppedException(sourceUrl),
+          flushBuffer: exception is! InvalidCacheException);
     }
     _pauseCounter.resume(force: true); //Break any pauses
   }
 
-  void pause() {
+  void pause({bool flushBuffer = true}) {
     if (_closed) return;
     _pauseCounter.pause();
-    _responseListener?.pause();
+    _responseListener?.pause(flushBuffer: flushBuffer);
   }
 
   void resume() {

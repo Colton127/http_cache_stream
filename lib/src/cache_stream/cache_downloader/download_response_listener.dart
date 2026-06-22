@@ -2,7 +2,7 @@ import 'dart:async';
 
 import '../../etc/chunked_bytes_buffer.dart';
 import '../../etc/timeout_timer.dart';
-import '../../models/config/stream_cache_config.dart';
+import '../../models/cache_config/stream_cache_config.dart';
 import '../../models/exceptions/http_exceptions.dart';
 
 class DownloadResponseListener {
@@ -50,9 +50,12 @@ class DownloadResponseListener {
     _completer.completeError(error);
   }
 
-  void pause() {
+  void pause({final bool flushBuffer = true}) {
     _timeoutTimer.reset();
     _subscription.pause();
+    if (flushBuffer) {
+      _buffer.flush();
+    }
   }
 
   void resume() {

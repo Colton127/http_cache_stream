@@ -1,18 +1,18 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 /// An IO sink that supports adding data while flushing to disk asynchronously.
 class BufferedIOSink {
   final File file;
-  BufferedIOSink(this.file, final int initialPosition)
-      : _initialPosition = initialPosition >= 0 ? initialPosition : 0;
-
+  BufferedIOSink(this.file, int initialPosition)
+      : _flushedBytes = initialPosition;
+  int _flushedBytes;
   final _buffer = BytesBuilder(copy: false);
-  final int _initialPosition;
   RandomAccessFile? _openedRAF;
-  int _flushedBytes = 0;
   bool _isClosed = false;
   Future<void>? _flushFuture;
+  final List<({int position, Completer<void> completer})> _positionWaiters = [];
 
   void add(List<int> data) {
     if (_isClosed) {
@@ -28,27 +28,69 @@ class BufferedIOSink {
     if (_buffer.isEmpty) return Future.value();
 
     return _flushFuture = () async {
-      RandomAccessFile? raf = _openedRAF;
+      try {
+        RandomAccessFile? raf = _openedRAF;
 
-      if (raf == null) {
-        FileMode fileMode = FileMode.append;
+        if (raf == null) {
+          FileMode fileMode = FileMode.append;
 
-        if (_initialPosition == 0 && _flushedBytes == 0) {
-          await file.parent.create(recursive: true); //Ensure directory exists
-          fileMode = FileMode.write; //Overwrite existing
+          if (flushedBytes == 0) {
+            await file.parent.create(recursive: true); //Ensure directory exists
+            fileMode = FileMode.write; //Overwrite existing
+          }
+
+          raf = _openedRAF = await file.open(mode: fileMode);
         }
 
-        raf = _openedRAF = await file.open(mode: fileMode);
+        while (_buffer.isNotEmpty) {
+          final bytes = _buffer.takeBytes();
+          await raf.writeFrom(bytes, 0, bytes.length);
+          _flushedBytes += bytes.length;
+          _notifyPositionWaiters();
+        }
+        _flushFuture = null;
+      } catch (e) {
+        _failPositionWaiters(e);
+        rethrow;
       }
-
-      while (_buffer.isNotEmpty) {
-        final bytes = _buffer.takeBytes();
-        await raf.writeFrom(bytes, 0, bytes.length);
-        _flushedBytes += bytes.length;
-      }
-
-      _flushFuture = null;
     }();
+  }
+
+  /// Returns a [Future] that completes once [flushedBytes] reaches or exceeds [minFlushedBytes].
+  /// Completes immediately if the position is already reached.
+  /// Fails if the sink is closed or a flush error occurs before the position is reached.
+  Future<void> waitForPosition(int minFlushedBytes,
+      [Duration timeout = const Duration(seconds: 30)]) {
+    if (_flushedBytes >= minFlushedBytes) return Future.value();
+    if (_isClosed) {
+      return Future.error(StateError(
+          'BufferedIOSink closed before reaching position $minFlushedBytes'));
+    }
+    final completer = Completer<void>();
+    _positionWaiters.add((position: minFlushedBytes, completer: completer));
+    return completer.future.timeout(timeout, onTimeout: () {
+      _positionWaiters.removeWhere((w) => w.completer == completer);
+      throw TimeoutException(
+          'Timeout while waiting for flushedBytes to reach $minFlushedBytes',
+          timeout);
+    });
+  }
+
+  void _notifyPositionWaiters() {
+    if (_positionWaiters.isEmpty) return;
+    for (int i = _positionWaiters.length - 1; i >= 0; i--) {
+      if (_flushedBytes >= _positionWaiters[i].position) {
+        _positionWaiters.removeAt(i).completer.complete();
+      }
+    }
+  }
+
+  void _failPositionWaiters(Object error) {
+    if (_positionWaiters.isEmpty) return;
+    for (final w in _positionWaiters) {
+      w.completer.completeError(error);
+    }
+    _positionWaiters.clear();
   }
 
   Future<void> close({final bool flushBuffer = true}) async {
@@ -61,6 +103,7 @@ class BufferedIOSink {
       }
       await flush(); //Even if !flushBuffer, ongoing flush must complete before RAF can be closed
     } finally {
+      _failPositionWaiters(StateError('BufferedIOSink closed'));
       _buffer.clear();
       if (_openedRAF case final RandomAccessFile raf) {
         _openedRAF = null;

@@ -1,12 +1,13 @@
 import 'dart:io';
 
 import 'package:http/http.dart';
-import 'package:http_cache_stream/src/models/config/cache_config.dart';
+import 'package:http_cache_stream/src/models/cache_config/cache_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../cache_stream/http_cache_stream.dart';
-import 'cache_file_resolver.dart';
+import '../cache_files/cache_file_resolver.dart';
+import 'stream_lifecycle_config.dart';
 
 /// A configuration class for [HttpCacheManager].
 ///
@@ -20,6 +21,7 @@ class GlobalCacheConfig implements CacheConfiguration {
     int? rangeRequestSplitThreshold,
     Map<String, String>? requestHeaders,
     Map<String, String>? responseHeaders,
+    this.lifecycleConfig = const StreamLifecycleConfig(),
     this.customHttpClient,
     this.copyCachedResponseHeaders = false,
     this.validateOutdatedCache = false,
@@ -108,13 +110,16 @@ class GlobalCacheConfig implements CacheConfiguration {
   @override
   bool saveAllHeaders;
 
+  @override
+  StreamLifecycleConfig lifecycleConfig;
+
   /// A function that takes the cache directory and source URL, and returns a [File] where the cache should be stored.
   /// This allows for custom file naming and organization strategies. By default, it generates a file path based on the URL structure.
   /// This function is called for every cache stream, unless if a custom file is provided when creating the cache stream.
   final CacheFileResolver cacheFileResolver;
 
-  /// Callback function fired when a cache stream download is completed.
-  void Function(HttpCacheStream cacheStream, File cacheFile)? onCacheDone;
+  @override
+  CacheCompleteCallback? onCacheDone;
 
   /// Returns the default cache directory for the application.
   ///
@@ -122,5 +127,16 @@ class GlobalCacheConfig implements CacheConfiguration {
   static Future<Directory> defaultCacheDirectory() async {
     final temporaryDirectory = await getTemporaryDirectory();
     return Directory(p.join(temporaryDirectory.path, 'http_cache_stream'));
+  }
+
+  /// Initializes a [GlobalCacheConfig] instance with the provided parameters, or default values if not provided.
+  static Future<GlobalCacheConfig> init({
+    final Directory? cacheDir,
+    final Client? customHttpClient,
+  }) async {
+    return GlobalCacheConfig(
+      cacheDirectory: cacheDir ?? await defaultCacheDirectory(),
+      customHttpClient: customHttpClient,
+    );
   }
 }
