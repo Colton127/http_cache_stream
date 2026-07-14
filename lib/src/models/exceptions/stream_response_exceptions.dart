@@ -13,6 +13,8 @@ class StreamResponseCancelledException extends StreamResponseException {
       : super('StreamResponse was cancelled');
 }
 
+@Deprecated('No longer thrown. Partial cache responses now stream from disk '
+    'with full backpressure and do not enforce a response buffer limit.')
 class StreamResponseExceededMaxBufferSizeException
     extends StreamResponseException {
   const StreamResponseExceededMaxBufferSizeException(int maxBufferSize)

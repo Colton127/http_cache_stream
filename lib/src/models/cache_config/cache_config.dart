@@ -34,9 +34,9 @@ abstract interface class CacheConfiguration {
   int? get rangeRequestSplitThreshold;
   set rangeRequestSplitThreshold(int? value);
 
-  ///The maximum amount of data (in bytes) to buffer in memory.
+  ///The maximum amount of download data (in bytes) to buffer in memory before it is written to disk.
   ///If an ongoing cache download is receiving data faster than it can be written to disk, and the buffer exceeds this size, the download will be paused until the buffer is flushed to disk.
-  ///If a response stream is receiving data faster than it can be consumed, and the buffer exceeds this size, then the stream will be cancelled with an exception.
+  ///Response streams are served from disk with full backpressure and never buffer data in memory, so this limit does not apply to them.
   ///Default is 25MB.
   int get maxBufferSize;
   set maxBufferSize(int value);

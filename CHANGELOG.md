@@ -1,3 +1,14 @@
+## Unreleased
+
+### Improved
+
+- **Partial cache responses are now served by following the partial cache file on disk** instead of buffering live download data in memory. Consumers (e.g. paused video players) can fall arbitrarily far behind the download without the response being cancelled — the previous implementation terminated responses once `maxBufferSize` (default 25MB) of undelivered data accumulated, and combined (cache + download) responses could fail on large, fast downloads. Response streams now hold at most one read chunk in memory, apply true backpressure, transparently survive download retries, and remain valid across partial-to-complete cache file promotion.
+- `maxBufferSize` now only governs the download-to-disk write buffer; it no longer applies to response streams.
+
+### Deprecated
+
+- `StreamResponseExceededMaxBufferSizeException` is never thrown anymore and is now deprecated.
+
 ## 0.1.0
 
 This release significantly simplifies cache management. A new `getCacheUrl` API automates the full lifecycle of cache streams, eliminating the need to create or manage `HttpCacheStream` instances for most integrations.

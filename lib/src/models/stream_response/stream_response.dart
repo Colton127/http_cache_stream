@@ -1,13 +1,13 @@
 import 'dart:async';
 
+import '../../cache_stream/cache_downloader/partial_cache_feed.dart';
 import '../cache_config/stream_cache_config.dart';
 import '../cache_files/cache_files.dart';
 import '../metadata/cached_response_headers.dart';
 import '../stream_requests/int_range.dart';
-import 'cache_download_stream_response.dart';
-import 'combined_cache_stream_response.dart';
 import 'file_stream_response.dart';
 import 'header_stream_response.dart';
+import 'partial_cache_stream_response.dart';
 import 'range_download_stream_response.dart';
 
 /// Represents a response from the cache manager.
@@ -53,37 +53,21 @@ abstract class StreamResponse {
     return FileStreamResponse(range, cacheFiles, responseHeaders);
   }
 
-  factory StreamResponse.fromStream(
-    final IntRange range,
-    final CachedResponseHeaders headers,
-    final Stream<List<int>> dataStream,
-    final int dataStreamPosition,
-    final StreamCacheConfig streamConfig,
-  ) {
-    return CacheDownloadStreamResponse(
-      range,
-      headers,
-      dataStream: dataStream,
-      dataStreamPosition: dataStreamPosition,
-      streamConfig: streamConfig,
-    );
-  }
-
-  factory StreamResponse.combined(
+  /// Creates a [StreamResponse] served from the partial cache file of an
+  /// active download, following the file on disk as data is flushed to it.
+  factory StreamResponse.fromPartialCache(
     final IntRange range,
     final CachedResponseHeaders headers,
     final CacheFiles cacheFiles,
-    final Stream<List<int>> dataStream,
-    final int dataStreamPosition,
-    final StreamCacheConfig streamConfig,
-  ) {
-    return CombinedCacheStreamResponse.construct(
+    final PartialCacheFeed feed, {
+    required final ResponseSource source,
+  }) {
+    return PartialCacheStreamResponse.construct(
       range,
       headers,
       cacheFiles,
-      dataStream,
-      dataStreamPosition,
-      streamConfig,
+      feed,
+      source: source,
     );
   }
 
@@ -133,13 +117,14 @@ enum ResponseSource {
   ///A stream response that is served exclusively from cached data saved to a file.
   cacheFile,
 
-  ///A stream response that is served exclusively from the cache download stream.
+  ///A stream response for a range at or beyond the current download position.
+  ///Data is served by following the partial cache file on disk as the download flushes to it, so nothing is buffered in memory and slow consumers are fully supported.
   ///
-  ///Data from the cache download stream is buffered until a listener is added. The stream must be read to completion or cancelled to release buffered data. If you no longer need the stream, you must manually call [cancel] to avoid memory leaks.
+  ///The stream must be read to completion or cancelled to release its file handle. If you no longer need the stream, call [cancel].
   cacheDownload,
 
-  ///A stream response that combines [cacheFile] and [cacheDownload] sources. When a listener is added, data is streamed from the cache file first, and once the file stream is done, it switches to the cache download stream.
+  ///A stream response for a range that begins within already-cached data and extends into the active download. Served identically to [cacheDownload]: by following the partial cache file on disk.
   ///
-  ///Data from the cache download stream is buffered until a listener is added. The stream must be read to completion or cancelled to release buffered data. If you no longer need the stream, you must manually call [cancel] to avoid memory leaks.
+  ///The stream must be read to completion or cancelled to release its file handle. If you no longer need the stream, call [cancel].
   combined,
 }

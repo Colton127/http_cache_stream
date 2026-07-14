@@ -8,6 +8,9 @@ class BufferedIOSink {
   BufferedIOSink(this.file, int initialPosition)
       : _flushedBytes = initialPosition;
   int _flushedBytes;
+
+  /// Called whenever [flushedBytes] advances, with the new value.
+  void Function(int flushedBytes)? onFlush;
   final _buffer = BytesBuilder(copy: false);
   RandomAccessFile? _openedRAF;
   bool _isClosed = false;
@@ -46,6 +49,7 @@ class BufferedIOSink {
           final bytes = _buffer.takeBytes();
           await raf.writeFrom(bytes, 0, bytes.length);
           _flushedBytes += bytes.length;
+          onFlush?.call(_flushedBytes);
           _notifyPositionWaiters();
         }
         _flushFuture = null;
