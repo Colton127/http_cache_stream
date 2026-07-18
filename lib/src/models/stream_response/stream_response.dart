@@ -120,11 +120,11 @@ enum ResponseSource {
   ///A stream response for a range at or beyond the current download position.
   ///Data is served by following the partial cache file on disk as the download flushes to it, so nothing is buffered in memory and slow consumers are fully supported.
   ///
-  ///The stream must be read to completion or cancelled to release its file handle. If you no longer need the stream, call [cancel].
+  ///The stream is inert until listened: each listener independently reads the full range, and releases its file handle when its subscription completes or is cancelled.
   cacheDownload,
 
   ///A stream response for a range that begins within already-cached data and extends into the active download. Served identically to [cacheDownload]: by following the partial cache file on disk.
   ///
-  ///The stream must be read to completion or cancelled to release its file handle. If you no longer need the stream, call [cancel].
+  ///The stream is inert until listened: each listener independently reads the full range, and releases its file handle when its subscription completes or is cancelled.
   combined,
 }

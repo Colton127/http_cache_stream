@@ -3,7 +3,6 @@ import 'dart:async';
 import '../../cache_stream/cache_downloader/partial_cache_feed.dart';
 import '../../cache_stream/response_streams/partial_cache_file_stream.dart';
 import '../cache_files/cache_files.dart';
-import '../exceptions/stream_response_exceptions.dart';
 import '../metadata/cached_response_headers.dart';
 import '../stream_requests/int_range.dart';
 import 'stream_response.dart';
@@ -46,7 +45,11 @@ class PartialCacheStreamResponse extends StreamResponse {
   }
 
   @override
-  void cancel() => _stream.cancel(const StreamResponseCancelledException());
+  void cancel() {
+    //No resources to release: the stream is inert until listened, and each
+    //listener releases its file handle when its subscription completes or is
+    //cancelled.
+  }
 
   @override
   Stream<List<int>> get stream => _stream;

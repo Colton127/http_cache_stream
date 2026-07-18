@@ -166,35 +166,85 @@ void main() {
     expect(streamError, isA<DownloadStoppedException>());
   });
 
-  test('cancel() delivers the cancellation error and stops the stream',
-      () async {
-    final payload = Payload.generate(64 * 1024);
+  test('cancelling the subscription stops the reader mid-follow', () async {
+    final payload = Payload.generate(128 * 1024);
     final feed = PartialCacheFeed(0);
-    await flush(feed, payload);
+    await flush(feed, Uint8List.sublistView(payload, 0, 64 * 1024));
 
-    final stream = streamFor(feed, sourceLength: 128 * 1024);
-    final events = <Object>[];
-    final done = Completer<void>();
-    stream.listen(
-      (data) => events.add(data),
-      onError: (Object e) => events.add(e),
-      onDone: done.complete,
-    );
+    final stream = streamFor(feed, sourceLength: payload.length);
+    final received = BytesBuilder(copy: false);
+    var closed = false;
+    final sub = stream.listen(received.add, onDone: () => closed = true);
 
     // Let it drain the flushed data, then cancel while it waits for more.
     await Future<void>.delayed(const Duration(milliseconds: 20));
-    stream.cancel();
-    await done.future;
+    expect(received.length, 64 * 1024);
+    await sub.cancel();
 
-    expect(events.whereType<StreamResponseCancelledException>(), isNotEmpty);
+    // Later download activity must not reach the cancelled subscription.
+    await flush(feed, Uint8List.sublistView(payload, 64 * 1024));
+    feed.finish();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(received.length, 64 * 1024);
+    expect(closed, isFalse, reason: 'no done event after an explicit cancel');
   });
 
-  test('cancel() before a listener attaches closes the stream cleanly',
-      () async {
+  test('is reusable: every listen gets an independent full read', () async {
+    final payload = Payload.generate(150 * 1024);
     final feed = PartialCacheFeed(0);
-    final stream = streamFor(feed, sourceLength: 1024);
-    stream.cancel();
-    await expectLater(stream, emitsThrough(emitsDone));
+    await flush(feed, payload);
+    feed.finish();
+
+    final stream = streamFor(feed, sourceLength: payload.length);
+    // Two concurrent listeners, then a third after the others completed.
+    final concurrent = await Future.wait([collect(stream), collect(stream)]);
+    final sequential = await collect(stream);
+
+    for (final bytes in [...concurrent, sequential]) {
+      expect(Payload.hash(bytes), Payload.hash(payload));
+    }
+  });
+
+  test('waits for readAhead at the download frontier instead of waking per flush',
+      () async {
+    final payload = Payload.generate(64 * 1024);
+    final feed = PartialCacheFeed(0);
+    // chunkSize 16KB -> readAhead 32KB.
+    final stream = streamFor(feed, sourceLength: 256 * 1024);
+    final received = BytesBuilder(copy: false);
+    stream.listen(received.add);
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+
+    // A trivial flush below the readAhead threshold must not wake the reader.
+    await flush(feed, Uint8List.sublistView(payload, 0, 10 * 1024));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(received.length, 0);
+
+    // Crossing the threshold wakes it and everything available is served.
+    await flush(feed, Uint8List.sublistView(payload, 10 * 1024, 40 * 1024));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(received.length, 40 * 1024);
+
+    // Termination wakes it regardless of the threshold.
+    await flush(feed, Uint8List.sublistView(payload, 40 * 1024));
+    feed.finish();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(Payload.hash(received.takeBytes()), Payload.hash(payload));
+  });
+
+  test('a range end closer than readAhead wakes the reader as soon as it is reachable',
+      () async {
+    final payload = Payload.generate(10 * 1024);
+    final feed = PartialCacheFeed(0);
+    // Range (10KB) is smaller than readAhead (32KB); flushing exactly the
+    // range must complete the stream without waiting for more data or finish.
+    final stream =
+        streamFor(feed, end: 10 * 1024, sourceLength: 256 * 1024);
+    final result = collect(stream);
+
+    await flush(feed, payload);
+    final bytes = await result.timeout(const Duration(seconds: 5));
+    expect(Payload.hash(bytes), Payload.hash(payload));
   });
 
   test('survives the partial file being renamed to complete mid-stream',
