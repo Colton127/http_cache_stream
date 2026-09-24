@@ -1,5 +1,9 @@
 ## 0.2.1
 
+### New Features
+
+* Added `HttpCacheManager.ensureActive()`. Ensures the local cache server is accepting connections, restarting it on the same port if needed. Call it before retrying a cache URL request that failed to connect (e.g. after an iOS app resumes from background suspension).
+
 ### Fixes
 
 * Fixed the iOS local cache server staying unreachable after the app resumes from background suspension. Recovery previously re-attached to the same dead listening socket, so connections kept failing with "could not connect to server" (`-1004`). The server now releases the dead socket and binds a new one on the same port.

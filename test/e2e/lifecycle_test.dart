@@ -252,4 +252,20 @@ void main() {
     await h.manager.deleteCache();
     expect(files.complete.existsSync(), isFalse);
   });
+
+  test('ensureActive keeps cache urls reachable', () async {
+    final source = h.origin.url('/ensure-active.mp3');
+    final cacheUrl = h.manager.getCacheUrl(source);
+
+    await h.manager.ensureActive();
+    final result = await h.fetch(cacheUrl);
+    expect(result.statusCode, 200);
+    expect(result.body, h.origin.payload);
+  });
+
+  test('ensureActive throws after the manager is disposed', () async {
+    final manager = h.manager;
+    await manager.dispose();
+    expect(manager.ensureActive, throwsA(isA<CacheManagerDisposedException>()));
+  });
 }

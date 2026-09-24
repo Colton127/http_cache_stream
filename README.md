@@ -55,6 +55,8 @@ Add the following to your projects `Info.plist` file:
 </dict>
 ```
 
+iOS can reclaim the local server's socket while the app is suspended in the background. The server recovers automatically, but a player that connects immediately on resume may fail with a connection error (`-1004`). To handle this, call `HttpCacheManager.instance.ensureActive()` before retrying the request.
+
 ### Android:
 
 Create `android/app/src/main/res/xml/network_security_config.xml`:

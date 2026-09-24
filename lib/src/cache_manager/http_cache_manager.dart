@@ -34,6 +34,16 @@ class HttpCacheManager {
     return _server.encodeSourceUrl(sourceUrl);
   }
 
+  /// Ensures the local cache server is accepting connections, restarting it on the same port if it is not.
+  ///
+  /// On iOS, the server's socket can be reclaimed while the app is suspended in the background. The server is checked periodically
+  /// and restarted automatically, but a player may connect before the next check. Call this before retrying a request to a cache URL
+  /// that failed to connect.
+  Future<void> ensureActive() {
+    _checkDisposed();
+    return _server.ensureActive();
+  }
+
   /// Create a [HttpCacheStream] instance for the given URL. If an instance already exists, the existing instance will be returned.
   /// Use [file] to specify the output file to save the downloaded content to. If not provided, a file will be created in the cache directory.
   /// Prefer [getCacheUrl] unless if you need access to the `HttpCacheStream` instance.
