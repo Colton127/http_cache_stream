@@ -1,3 +1,9 @@
+## 0.2.1
+
+### Fixes
+
+* Fixed the iOS local cache server staying unreachable after the app resumes from background suspension. Recovery previously re-attached to the same dead listening socket, so connections kept failing with "could not connect to server" (`-1004`). The server now releases the dead socket and binds a new one on the same port.
+
 ## 0.2.0
 
 This release is designed to preserve existing behavior while making caching and streaming faster and more robust.

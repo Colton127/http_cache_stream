@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 /// A wrapper around [HttpServer] that keeps the server alive by periodically checking its health and restarting it if necessary.
 /// Workaround for https://github.com/dart-lang/sdk/issues/63168
 class KeepAliveServer {
@@ -64,18 +66,36 @@ class KeepAliveServer {
     return _ensureActiveFuture ??= () async {
       try {
         if (await isAlive()) return;
-        if (_closed) return;
-
-        final prevServer = _server;
-
-        _server = await HttpServer.bind(address, port, shared: true);
-        _forwardEvents(_server);
-
-        await prevServer.close(force: true);
+        await rebind();
       } finally {
         _ensureActiveFuture = null;
       }
     }();
+  }
+
+  /// Replaces the listening socket with a new one on the same address and port.
+  ///
+  /// The current server must be closed before binding: within one process, a
+  /// `shared` bind to an (address, port) that is still open reuses the existing
+  /// listening socket rather than creating a new one, so binding first would
+  /// re-attach to the same dead socket. Closing without `force` leaves requests
+  /// already in progress untouched.
+  @visibleForTesting
+  Future<void> rebind() async {
+    if (_closed) return;
+    final prevSubscription = _serverSubscription;
+    _serverSubscription = null;
+    await prevSubscription?.cancel();
+    await _server.close();
+    if (_closed) return;
+
+    final server = await HttpServer.bind(address, port, shared: true);
+    if (_closed) {
+      await server.close(force: true);
+      return;
+    }
+    _server = server;
+    _forwardEvents(server);
   }
 
   StreamSubscription<HttpRequest> listen(
