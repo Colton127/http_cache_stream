@@ -78,6 +78,22 @@ Reference the file in `android/app/src/main/res/AndroidManifest.xml` by adding t
 
 See the example project for a full example.
 
+### Without the local server
+
+If your app reads streams directly (through `createStream` and `HttpCacheStream.request`) rather than handing a URL to a player, you can skip the local server entirely. No socket is bound, so no cleartext or network-server configuration is needed, and it works in sandboxes that refuse to bind one (e.g. a macOS App Sandbox without the `com.apple.security.network.server` entitlement):
+
+```dart
+await HttpCacheManager.init(startServer: false);
+
+final stream = HttpCacheManager.instance.createStream(sourceUrl);
+final response = await stream.request(start: 0); // downloads and caches as it streams
+await for (final chunk in response.stream) {
+  // ...
+}
+```
+
+Without a server there is no cache URL: `getCacheUrl` and `HttpCacheStream.cacheUrl` throw a `CacheServerUnavailableException` (check `HttpCacheManager.hasServer` or `HttpCacheStream.hasCacheUrl`), and `ensureActive()` does nothing.
+
 
 # Core Components
 
