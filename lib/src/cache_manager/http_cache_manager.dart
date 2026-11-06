@@ -275,21 +275,27 @@ class HttpCacheManager {
     if (_instance != null) {
       return Future.value(instance);
     }
-    return _initFuture ??= () async {
-      try {
-        final cacheConfig = config ??
-            GlobalCacheConfig(
-              cacheDirectory:
-                  cacheDir ?? await GlobalCacheConfig.defaultCacheDirectory(),
-              customHttpClient: customHttpClient,
-            );
-        final httpCacheServer =
-            startServer ? await LocalCacheServer.init(port: port) : null;
-        return _instance = HttpCacheManager._(httpCacheServer, cacheConfig);
-      } finally {
-        _initFuture = null;
-      }
+    final pending = _initFuture;
+    if (pending != null) return pending;
+    final future = _initFuture = () async {
+      final cacheConfig = config ??
+          GlobalCacheConfig(
+            cacheDirectory:
+                cacheDir ?? await GlobalCacheConfig.defaultCacheDirectory(),
+            customHttpClient: customHttpClient,
+          );
+      final httpCacheServer =
+          startServer ? await LocalCacheServer.init(port: port) : null;
+      return _instance = HttpCacheManager._(httpCacheServer, cacheConfig);
     }();
+    // Cleared once the future is stored, not from inside the closure: without a server
+    // and with cacheDir or config given, the closure has no await, so it would finish
+    // (and clear _initFuture) before the assignment above, leaving a stale future that
+    // hands out the old manager after it is disposed.
+    future.whenComplete(() {
+      if (identical(_initFuture, future)) _initFuture = null;
+    }).ignore();
+    return future;
   }
 
   /// The singleton instance of [HttpCacheManager].
