@@ -13,7 +13,9 @@ import '../etc/helpers.dart';
 ///
 /// Use [init] to initialize the manager before creating streams.
 class HttpCacheManager {
-  final LocalCacheServer _server;
+  /// Null when [init] was called with `startServer: false`: streams are then read
+  /// through [HttpCacheStream.request] only, and there is no cache URL to play.
+  final LocalCacheServer? _server;
 
   /// The global configuration used for all streams managed by this manager.
   final GlobalCacheConfig config;
@@ -21,17 +23,28 @@ class HttpCacheManager {
   final Map<RequestKey, HttpCacheStream> _streams = {};
   final Map<RequestKey, File> _customCacheFiles = {};
   HttpCacheManager._(this._server, this.config) {
-    _server.start(createStream);
+    _server?.start(createStream);
   }
+
+  /// Whether the local cache server was started, i.e. whether [getCacheUrl] and [HttpCacheStream.cacheUrl] are available.
+  ///
+  /// False when [init] was called with `startServer: false`.
+  bool get hasServer => _server != null;
 
   /// Gets the cache URL for the given source URL.
   /// If a custom cache file is provided, it will be saved and used for the cache stream.
+  ///
+  /// Throws a [CacheServerUnavailableException] if the manager has no local cache server (see [hasServer]).
   Uri getCacheUrl(final Uri sourceUrl, {final File? file}) {
     _checkDisposed();
+    final server = _server;
+    if (server == null) {
+      throw CacheServerUnavailableException(sourceUrl);
+    }
     if (file != null) {
       _customCacheFiles[sourceUrl.requestKey] = file;
     }
-    return _server.encodeSourceUrl(sourceUrl);
+    return server.encodeSourceUrl(sourceUrl);
   }
 
   /// Ensures the local cache server is accepting connections, restarting it on the same port if it is not.
@@ -39,9 +52,11 @@ class HttpCacheManager {
   /// On iOS, the server's socket can be reclaimed while the app is suspended in the background. The server is checked periodically
   /// and restarted automatically, but a player may connect before the next check. Call this before retrying a request to a cache URL
   /// that failed to connect.
+  ///
+  /// Does nothing if the manager has no local cache server (see [hasServer]): no server is started or bound.
   Future<void> ensureActive() {
     _checkDisposed();
-    return _server.ensureActive();
+    return _server?.ensureActive() ?? Future.value();
   }
 
   /// Create a [HttpCacheStream] instance for the given URL. If an instance already exists, the existing instance will be returned.
@@ -72,7 +87,7 @@ class HttpCacheManager {
 
     final cacheStream = HttpCacheStream(
       sourceUrl: sourceUrl,
-      cacheUrl: _server.encodeSourceUrl(sourceUrl),
+      cacheUrl: _server?.encodeSourceUrl(sourceUrl),
       files: cacheFiles,
       config: config ?? createStreamConfig(),
     );
@@ -178,13 +193,13 @@ class HttpCacheManager {
   /// The input [url] can either be [sourceUrl] or [cacheUrl].
   HttpCacheStream? getExistingStream(Uri url) {
     _checkDisposed();
-    url = _server.decodeSourceUrl(url) ?? url;
+    url = _server?.decodeSourceUrl(url) ?? url;
     return _streams[url.requestKey];
   }
 
   CacheFiles _resolveCacheFiles(Uri sourceUrl, [File? cacheFile]) {
     if (cacheFile == null) {
-      sourceUrl = _server.decodeSourceUrl(sourceUrl) ?? sourceUrl;
+      sourceUrl = _server?.decodeSourceUrl(sourceUrl) ?? sourceUrl;
       cacheFile = _customCacheFiles[sourceUrl.requestKey] ??
           config.cacheFileResolver(config.cacheDirectory, sourceUrl);
     }
@@ -202,7 +217,7 @@ class HttpCacheManager {
     _onStreamCreated = null;
 
     try {
-      await _server.close(force: true);
+      await _server?.close(force: true);
     } finally {
       _customCacheFiles.clear();
       for (final stream in _streams.values.toList()) {
@@ -240,31 +255,47 @@ class HttpCacheManager {
   /// [customHttpClient] is the custom http client to use. If null, a default http client will be used.
   /// You can also provide [GlobalCacheConfig] for the initial configuration.
   /// Use `port` to specify the port for the local server. If not provided, a random available port will be used.
+  ///
+  /// Set [startServer] to false to skip the local cache server, for consumers that read streams directly through
+  /// [createStream] and [HttpCacheStream.request] rather than over HTTP. No socket is bound, so this works where binding
+  /// is refused (e.g. a macOS App Sandbox without the `com.apple.security.network.server` entitlement). Downloading
+  /// and caching work as usual, but [getCacheUrl] and [HttpCacheStream.cacheUrl] throw a [CacheServerUnavailableException],
+  /// [ensureActive] does nothing, and [port] is ignored. See [hasServer].
+  ///
+  /// If the manager is already initialized, the existing instance is returned and these arguments are ignored.
   static Future<HttpCacheManager> init({
     final Directory? cacheDir,
     final http.Client? customHttpClient,
     final GlobalCacheConfig? config,
     final int? port,
+    final bool startServer = true,
   }) {
     assert(config == null || (cacheDir == null && customHttpClient == null),
         'Cannot set cacheDir or httpClient when config is provided. Set them in the config instead.');
     if (_instance != null) {
       return Future.value(instance);
     }
-    return _initFuture ??= () async {
-      try {
-        final cacheConfig = config ??
-            GlobalCacheConfig(
-              cacheDirectory:
-                  cacheDir ?? await GlobalCacheConfig.defaultCacheDirectory(),
-              customHttpClient: customHttpClient,
-            );
-        final httpCacheServer = await LocalCacheServer.init(port: port);
-        return _instance = HttpCacheManager._(httpCacheServer, cacheConfig);
-      } finally {
-        _initFuture = null;
-      }
+    final pending = _initFuture;
+    if (pending != null) return pending;
+    final future = _initFuture = () async {
+      final cacheConfig = config ??
+          GlobalCacheConfig(
+            cacheDirectory:
+                cacheDir ?? await GlobalCacheConfig.defaultCacheDirectory(),
+            customHttpClient: customHttpClient,
+          );
+      final httpCacheServer =
+          startServer ? await LocalCacheServer.init(port: port) : null;
+      return _instance = HttpCacheManager._(httpCacheServer, cacheConfig);
     }();
+    // Cleared once the future is stored, not from inside the closure: without a server
+    // and with cacheDir or config given, the closure has no await, so it would finish
+    // (and clear _initFuture) before the assignment above, leaving a stale future that
+    // hands out the old manager after it is disposed.
+    future.whenComplete(() {
+      if (identical(_initFuture, future)) _initFuture = null;
+    }).ignore();
+    return future;
   }
 
   /// The singleton instance of [HttpCacheManager].

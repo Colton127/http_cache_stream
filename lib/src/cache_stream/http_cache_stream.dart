@@ -34,7 +34,16 @@ class HttpCacheStream {
   final Uri sourceUrl;
 
   /// The Url of the cached stream served by the local cache server (e.g., http://localhost:8080/http/example.com/file.mp3)
-  final Uri cacheUrl;
+  ///
+  /// Throws a [CacheServerUnavailableException] when the stream has no cache URL, which is the case when
+  /// `HttpCacheManager.init` was called with `startServer: false`. Check [hasCacheUrl] first, or read the content
+  /// through [request] instead.
+  Uri get cacheUrl =>
+      _cacheUrl ?? (throw CacheServerUnavailableException(sourceUrl));
+  final Uri? _cacheUrl;
+
+  /// Whether this stream is served by the local cache server, i.e. whether [cacheUrl] is available.
+  bool get hasCacheUrl => _cacheUrl != null;
 
   /// The complete, partial, and metadata files used for the cache.
   final CacheFiles files;
@@ -61,10 +70,10 @@ class HttpCacheStream {
 
   HttpCacheStream({
     required this.sourceUrl,
-    required this.cacheUrl,
+    final Uri? cacheUrl,
     required this.files,
     required this.config,
-  }) {
+  }) : _cacheUrl = cacheUrl {
     _initFuture.run(() async {
       try {
         _cachedResponseHeaders =
@@ -620,5 +629,5 @@ class HttpCacheStream {
 
   @override
   String toString() =>
-      'HttpCacheStream{sourceUrl: $sourceUrl, cacheUrl: $cacheUrl, cacheFile: $cacheFile}';
+      'HttpCacheStream{sourceUrl: $sourceUrl, cacheUrl: $_cacheUrl, cacheFile: $cacheFile}';
 }

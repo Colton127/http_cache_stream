@@ -1,3 +1,15 @@
+## 0.3.0 (unreleased)
+
+### New Features
+
+* Added `HttpCacheManager.init(startServer: false)`, which starts the manager without its local cache server, for apps that read streams directly through `createStream` and `HttpCacheStream.request` instead of over HTTP. No socket is bound, so it works where binding is refused, such as a macOS App Sandbox without the `com.apple.security.network.server` entitlement. Downloading and caching work as usual. The default is unchanged (`startServer: true`).
+* Added `HttpCacheManager.hasServer` and `HttpCacheStream.hasCacheUrl`.
+* Added `CacheServerUnavailableException` (a `StateError`), thrown by `HttpCacheManager.getCacheUrl` and `HttpCacheStream.cacheUrl` when the manager has no local cache server. Without a server, `ensureActive()` does nothing and `port` is ignored.
+
+### Fixes
+
+* Fixed `HttpCacheManager.init` returning the previous, disposed manager after `dispose()` when the init completed without an asynchronous step (no server, with `cacheDir` or `config` given).
+
 ## 0.2.1
 
 ### New Features
