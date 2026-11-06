@@ -51,69 +51,84 @@ void main() {
     expect(HttpCacheManager.instanceOrNull, same(manager));
   });
 
-  test('a stream downloads, caches and serves from cache without a server',
-      () async {
-    final manager =
-        await HttpCacheManager.init(cacheDir: cacheDir, startServer: false);
-    final source = origin.url('/audio.mp3');
-    final stream = manager.createStream(source);
+  test(
+    'a stream downloads, caches and serves from cache without a server',
+    () async {
+      final manager = await HttpCacheManager.init(
+        cacheDir: cacheDir,
+        startServer: false,
+      );
+      final source = origin.url('/audio.mp3');
+      final stream = manager.createStream(source);
 
-    // First read streams from the origin while caching.
-    final first = await stream.request();
-    expect(await readAll(first), payload);
+      // First read streams from the origin while caching.
+      final first = await stream.request();
+      expect(await readAll(first), payload);
 
-    final file = await stream.download();
-    expect(await file.readAsBytes(), payload);
-    final originRequests = origin.requestCount;
+      final file = await stream.download();
+      expect(await file.readAsBytes(), payload);
+      final originRequests = origin.requestCount;
 
-    // A ranged read is now served from the cache file, not the origin.
-    final ranged = await stream.request(start: 100, end: 200);
-    expect(ranged.source, ResponseSource.cacheFile);
-    expect(await readAll(ranged), payload.sublist(100, 200));
-    expect(origin.requestCount, originRequests);
+      // A ranged read is now served from the cache file, not the origin.
+      final ranged = await stream.request(start: 100, end: 200);
+      expect(ranged.source, ResponseSource.cacheFile);
+      expect(await readAll(ranged), payload.sublist(100, 200));
+      expect(origin.requestCount, originRequests);
 
-    expect(manager.getExistingStream(source), same(stream));
-    await stream.dispose(force: true);
+      expect(manager.getExistingStream(source), same(stream));
+      await stream.dispose(force: true);
 
-    // A fresh stream for the same URL picks up the completed cache.
-    final again = manager.createStream(source);
-    final cached = await again.request();
-    expect(cached.source, ResponseSource.cacheFile);
-    expect(await readAll(cached), payload);
-    expect(origin.requestCount, originRequests);
-    await again.dispose(force: true);
-  });
+      // A fresh stream for the same URL picks up the completed cache.
+      final again = manager.createStream(source);
+      final cached = await again.request();
+      expect(cached.source, ResponseSource.cacheFile);
+      expect(await readAll(cached), payload);
+      expect(origin.requestCount, originRequests);
+      await again.dispose(force: true);
+    },
+  );
 
   test('preCacheUrl works without a server', () async {
-    final manager =
-        await HttpCacheManager.init(cacheDir: cacheDir, startServer: false);
+    final manager = await HttpCacheManager.init(
+      cacheDir: cacheDir,
+      startServer: false,
+    );
     final file = await manager.preCacheUrl(origin.url('/pre.mp3'));
     expect(await file.readAsBytes(), payload);
   });
 
-  test('cache URLs throw CacheServerUnavailableException without a server',
-      () async {
-    final manager =
-        await HttpCacheManager.init(cacheDir: cacheDir, startServer: false);
-    final source = origin.url('/audio.mp3');
+  test(
+    'cache URLs throw CacheServerUnavailableException without a server',
+    () async {
+      final manager = await HttpCacheManager.init(
+        cacheDir: cacheDir,
+        startServer: false,
+      );
+      final source = origin.url('/audio.mp3');
 
-    expect(
-      () => manager.getCacheUrl(source),
-      throwsA(isA<CacheServerUnavailableException>()
-          .having((e) => e.sourceUrl, 'sourceUrl', source)),
-    );
+      expect(
+        () => manager.getCacheUrl(source),
+        throwsA(
+          isA<CacheServerUnavailableException>().having(
+            (e) => e.sourceUrl,
+            'sourceUrl',
+            source,
+          ),
+        ),
+      );
 
-    final stream = manager.createStream(source);
-    expect(stream.hasCacheUrl, isFalse);
-    expect(
-      () => stream.cacheUrl,
-      throwsA(isA<CacheServerUnavailableException>()),
-    );
-    // A StateError, so existing `on StateError` handlers still catch it.
-    expect(() => stream.cacheUrl, throwsStateError);
-    expect(stream.toString(), contains('cacheUrl: null'));
-    await stream.dispose(force: true);
-  });
+      final stream = manager.createStream(source);
+      expect(stream.hasCacheUrl, isFalse);
+      expect(
+        () => stream.cacheUrl,
+        throwsA(isA<CacheServerUnavailableException>()),
+      );
+      // A StateError, so existing `on StateError` handlers still catch it.
+      expect(() => stream.cacheUrl, throwsStateError);
+      expect(stream.toString(), contains('cacheUrl: null'));
+      await stream.dispose(force: true);
+    },
+  );
 
   test('ensureActive does nothing without a server', () async {
     final held = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
@@ -135,8 +150,10 @@ void main() {
   });
 
   test('dispose works without a server', () async {
-    final manager =
-        await HttpCacheManager.init(cacheDir: cacheDir, startServer: false);
+    final manager = await HttpCacheManager.init(
+      cacheDir: cacheDir,
+      startServer: false,
+    );
     final stream = manager.createStream(origin.url('/audio.mp3'));
     await stream.download();
 
@@ -145,8 +162,10 @@ void main() {
     expect(HttpCacheManager.isInitialized, isFalse);
     await stream.future.timeout(const Duration(seconds: 5));
     expect(stream.isDisposed, isTrue);
-    expect(() => manager.ensureActive(),
-        throwsA(isA<CacheManagerDisposedException>()));
+    expect(
+      () => manager.ensureActive(),
+      throwsA(isA<CacheManagerDisposedException>()),
+    );
 
     // A disposed serverless manager can be replaced by one with a server.
     final next = await HttpCacheManager.init(cacheDir: cacheDir);
@@ -157,8 +176,10 @@ void main() {
     // Serverless init with a cacheDir completes without an await; the pending
     // init future must still be cleared so the next init does not hand back
     // the disposed manager.
-    final first =
-        await HttpCacheManager.init(cacheDir: cacheDir, startServer: false);
+    final first = await HttpCacheManager.init(
+      cacheDir: cacheDir,
+      startServer: false,
+    );
     await first.dispose();
     final second = await HttpCacheManager.init(
       config: GlobalCacheConfig(cacheDirectory: cacheDir),
