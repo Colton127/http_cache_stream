@@ -1,4 +1,10 @@
-## 0.3.0 (unreleased)
+## 0.3.1
+
+### Fixes
+
+* Fixed a download whose write to the cache file failed (a full disk, say) requesting the source again at once, again and again, reporting an error each time. The next attempt now waits 5 s, doubling to a minute while attempts keep failing.
+
+## 0.3.0
 
 ### New Features
 
