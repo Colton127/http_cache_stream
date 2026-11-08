@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' show min;
 
 import 'package:http_cache_stream/src/cache_stream/cache_downloader/cache_downloader.dart';
 import 'package:http_cache_stream/src/etc/extensions/future_extensions.dart';
@@ -206,6 +207,8 @@ class HttpCacheStream {
       await _ensureInit();
       _checkDisposed();
 
+      ///Attempts in a row that ended on an error, see [_retryDelay].
+      int failedAttempts = 0;
       while (true) {
         final state = await refreshCacheState();
         if (state.isComplete) {
@@ -223,11 +226,14 @@ class HttpCacheStream {
           continue;
         }
 
+        ///The error this attempt ended on: one reported after the download last moved on.
+        Object? endError;
         try {
           final downloader =
               _cacheDownloader = CacheDownloader.construct(metadata, config);
           await downloader.download(
             onPosition: (position) {
+              endError = null; //It moved on, past any error before
               _updateCacheState(
                   CacheState.incomplete(position, downloader.sourceLength));
               while (_queuedRequests.isNotEmpty &&
@@ -251,6 +257,7 @@ class HttpCacheStream {
             },
             onError: (e) {
               assert(e is! InvalidCacheException);
+              endError = e;
               _addError(e, closeRequests: true);
             },
           );
@@ -263,12 +270,27 @@ class HttpCacheStream {
           }
           if (!isRetained) rethrow;
           await Future.delayed(const Duration(seconds: 5));
+          continue;
         } finally {
           _cacheDownloader = null;
+        }
+
+        if (endError == null) {
+          failedAttempts = 0;
+        } else if (isRetained) {
+          await Future.delayed(_retryDelay(++failedAttempts));
         }
       }
     });
   }
+
+  ///How long [download] waits after its [attempts]th attempt in a row that ended on an error: 5 s,
+  ///doubling to a minute. The downloader retries what the network does itself, after 5 s; an
+  ///attempt ends on an error when it gives up, as a write to the cache file that fails (a full
+  ///disk) gives it up, and without the wait the next attempt would request the source again at
+  ///once, and fail again.
+  static Duration _retryDelay(final int attempts) =>
+      Duration(seconds: min(5 << min(attempts - 1, 4), 60));
 
   Future<CachedResponseHeaders> downloadHeaders({bool save = true}) {
     return _downloadHeadersFuture.run(() async {
