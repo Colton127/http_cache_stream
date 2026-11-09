@@ -38,14 +38,16 @@ void main() {
     return builder.takeBytes();
   }
 
-  /// The [InvalidCacheSizeException]s [stream] reports, as their sizes.
-  List<int> listenForInvalidSizes(HttpCacheStream stream) {
-    final sizes = <int>[];
-    stream.cacheStateStream.listen(null, onError: (Object e) {
-      if (e is InvalidCacheSizeException) sizes.add(e.size);
-    });
-    return sizes;
+  /// The errors [stream] reports.
+  List<Object> listenForErrors(HttpCacheStream stream) {
+    final errors = <Object>[];
+    stream.cacheStateStream.listen(null, onError: errors.add);
+    return errors;
   }
+
+  /// The [InvalidCacheSizeException]s in [errors], as their sizes.
+  List<int> invalidSizes(List<Object> errors) =>
+      [for (final e in errors.whereType<InvalidCacheSizeException>()) e.size];
 
   /// Leaves a partial cache of [source]'s first [bytes], as an interrupted
   /// download does.
@@ -74,7 +76,7 @@ void main() {
       ..responseBodyGate = bodyGate
       ..responseBodyGateAfterBytes = half;
     final stream = h.manager.createStream(h.origin.url('/deleted.mp3'));
-    final invalidSizes = listenForInvalidSizes(stream);
+    final errors = listenForErrors(stream);
     final download = stream.download();
     await _until(() => stream.cachePosition >= half);
     final partial = stream.files.partial;
@@ -86,7 +88,8 @@ void main() {
     final bytes =
         await read(stream, 1000, 9000).timeout(const Duration(seconds: 10));
     expect(bytes, Uint8List.sublistView(h.origin.payload, 1000, 9000));
-    expect(invalidSizes, contains(-1), reason: 'the deletion is reported');
+    expect(invalidSizes(errors), contains(-1),
+        reason: 'the deletion is reported');
 
     bodyGate.complete();
     final file = await download.timeout(const Duration(seconds: 15));
@@ -113,7 +116,7 @@ void main() {
       ..responseBodyGateAfterBytes = quarter;
     final requestsBefore = h.origin.requestCount;
     final resumed = h.manager.createStream(source);
-    final invalidSizes = listenForInvalidSizes(resumed);
+    final errors = listenForErrors(resumed);
     resumed.download().ignore();
     await _until(() => h.origin.requestCount > requestsBefore);
     await resumed.files.partial.delete();
@@ -121,7 +124,8 @@ void main() {
     await _until(
         () => (resumed.files.partial.lengthSyncOrNull() ?? 0) >= quarter);
     await resumed.dispose(force: true);
-    expect(invalidSizes, contains(0), reason: 'the deletion is reported');
+    expect(invalidSizes(errors), contains(0),
+        reason: 'the deletion is reported');
     h.origin
       ..responseStartGate = null
       ..responseBodyGate = null
@@ -135,16 +139,50 @@ void main() {
     await next.dispose(force: true);
   });
 
+  test('concurrent requests after the partial file was deleted reset it once',
+      () async {
+    final half = h.origin.payload.length ~/ 2;
+    final bodyGate = Completer<void>();
+    h.origin
+      ..responseBodyGate = bodyGate
+      ..responseBodyGateAfterBytes = half;
+    final stream = h.manager.createStream(h.origin.url('/deleted-twice.mp3'));
+    final errors = listenForErrors(stream);
+    final download = stream.download();
+    await _until(() => stream.cachePosition >= half);
+    final partial = stream.files.partial;
+    await _until(() => (partial.lengthSyncOrNull() ?? 0) >= half);
+    final requestsBefore = h.origin.requestCount;
+    await partial.delete();
+
+    // Each request revalidates; one reset is due, not one for each.
+    final ranges = [(1000, 9000), (20000, 30000), (50000, 60000)];
+    final reads = await Future.wait([
+      for (final (start, end) in ranges) read(stream, start, end),
+    ]).timeout(const Duration(seconds: 10));
+    for (final (i, (start, end)) in ranges.indexed) {
+      expect(reads[i], Uint8List.sublistView(h.origin.payload, start, end));
+    }
+    expect(invalidSizes(errors), [-1]);
+    expect(h.origin.requestCount, requestsBefore + 1,
+        reason: 'the download starts over once');
+
+    bodyGate.complete();
+    final file = await download.timeout(const Duration(seconds: 15));
+    expect(Payload.hash(await file.readAsBytes()), h.payloadHash);
+    await stream.dispose(force: true);
+  });
+
   test('a complete cache file of the wrong size is downloaded again', () async {
     final stream = h.manager.createStream(h.origin.url('/truncated.mp3'));
-    final invalidSizes = listenForInvalidSizes(stream);
+    final errors = listenForErrors(stream);
     final file = await stream.download();
     await file.writeAsBytes(Uint8List(1000));
 
     final bytes =
         await read(stream, 1000, 9000).timeout(const Duration(seconds: 10));
     expect(bytes, Uint8List.sublistView(h.origin.payload, 1000, 9000));
-    expect(invalidSizes, contains(1000));
+    expect(invalidSizes(errors), contains(1000));
 
     final downloaded =
         await stream.download().timeout(const Duration(seconds: 15));

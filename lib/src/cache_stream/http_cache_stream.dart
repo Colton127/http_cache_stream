@@ -427,7 +427,17 @@ class HttpCacheStream {
   /// [CacheState.zero].
   Future<CacheState> refreshCacheState() async {
     try {
-      final state = await _fileLock.synchronized(_cacheFileState);
+      final state = await _fileLock.synchronized(() async {
+        try {
+          return await _cacheFileState();
+        } on InvalidCacheException catch (e) {
+          //Cancelled before the lock is released: a refresh waiting for it
+          //does not judge the download again (and reset its successor), and no
+          //request is served from it.
+          _activeDownloader?.cancel(e).ignore();
+          rethrow;
+        }
+      });
       _updateCacheState(state);
       return state;
     } on InvalidCacheException catch (e) {
