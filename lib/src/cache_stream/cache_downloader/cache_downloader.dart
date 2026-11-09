@@ -204,6 +204,9 @@ class CacheDownloader {
       _validatedHeaders?.sourceLength ?? _resumeHeaders?.sourceLength;
   int get downloadPosition => _position;
   int get filePosition => _sink.flushedBytes;
+
+  ///If the download may still write to the partial cache file.
+  bool get isWriting => !_sink.isClosed;
   Uri get sourceUrl => _downloader.sourceUrl;
   bool get isClosed => _completer.isCompleted;
 
