@@ -3,14 +3,18 @@ sealed class CacheState {
 
   const factory CacheState.zero() = IncompleteCacheState.zero;
 
-  const factory CacheState.incomplete(int position, int? sourceLength) =
-      IncompleteCacheState;
+  const factory CacheState.incomplete(int position, int? sourceLength,
+      {int? filePosition}) = IncompleteCacheState;
 
   const factory CacheState.complete(int sourceLength) = CompleteCacheState;
 
   /// Bytes currently available in the cache (downloaded or on disk).
   /// For an active download, this may be ahead of the current read position. For a completed cache, this will match [sourceLength].
   int get position;
+
+  /// Bytes saved in the cache file on disk.
+  /// For an active download, this may be behind [position] by the bytes it has yet to save. For a completed cache, this will match [sourceLength].
+  int get filePosition;
 
   /// Total source size in bytes, or null if the server hasn't reported it yet.
   int? get sourceLength;
@@ -30,17 +34,23 @@ sealed class CacheState {
 
   @override
   String toString() =>
-      'CacheState(position: $position, sourceLength: $sourceLength, isComplete: $isComplete)';
+      'CacheState(position: $position, filePosition: $filePosition, sourceLength: $sourceLength, isComplete: $isComplete)';
 }
 
 /// Cache state while a download is in progress, paused, or not yet started.
 final class IncompleteCacheState extends CacheState {
-  const IncompleteCacheState(this.position, this.sourceLength);
+  /// [filePosition] defaults to [position]: every byte saved.
+  const IncompleteCacheState(this.position, this.sourceLength,
+      {final int? filePosition})
+      : filePosition = filePosition ?? position;
 
   const IncompleteCacheState.zero() : this(0, null);
 
   @override
   final int position;
+
+  @override
+  final int filePosition;
 
   @override
   final int? sourceLength;
@@ -73,11 +83,12 @@ final class IncompleteCacheState extends CacheState {
     if (identical(this, other)) return true;
     return other is IncompleteCacheState &&
         position == other.position &&
+        filePosition == other.filePosition &&
         sourceLength == other.sourceLength;
   }
 
   @override
-  int get hashCode => Object.hash(position, sourceLength);
+  int get hashCode => Object.hash(position, filePosition, sourceLength);
 }
 
 /// Cache state once the file has been fully downloaded and renamed into place.
@@ -89,6 +100,9 @@ final class CompleteCacheState extends CacheState {
 
   @override
   int get position => sourceLength;
+
+  @override
+  int get filePosition => sourceLength;
 
   @override
   bool get isComplete => true;
