@@ -27,6 +27,9 @@ class CacheDownloader {
 
   ///Headers received and validated
   CachedResponseHeaders? _validatedHeaders;
+
+  ///The invalid cache [cancel] stopped the download for, if any. The download ends on it, and serves no more requests.
+  InvalidCacheException? _invalidCache;
   CacheDownloader._(
     final CacheMetadata cacheMetadata,
     final int startPosition,
@@ -109,6 +112,11 @@ class CacheDownloader {
             }
           },
         );
+        //Cancelled for an invalid cache between responses (waiting for one, or to retry), the download
+        //returns as if stopped; it ends on the exception, as when a response is cancelled for it.
+        if (_invalidCache case final InvalidCacheException invalidCache) {
+          throw invalidCache;
+        }
       } on InvalidCacheException {
         _validatedHeaders = null;
         rethrow;
@@ -144,7 +152,11 @@ class CacheDownloader {
   }
 
   /// Cancels the download and closes the stream. An optional [error] can be provided to indicate the reason for cancellation.
+  /// An [InvalidCacheException] ends [download] on it, and the download serves no more requests.
   Future<void> cancel([Object? exception]) async {
+    if (exception is InvalidCacheException) {
+      _invalidCache ??= exception;
+    }
     _downloader.close(exception);
     _paused = false;
     return _completer.future;
@@ -164,6 +176,7 @@ class CacheDownloader {
 
   bool processRequest(final StreamRequest request) {
     assert(!_paused);
+    if (isInvalidated) return false;
     if (request.start > downloadPosition) return false;
     final headers = _validatedHeaders;
     if (headers == null) return false;
@@ -193,5 +206,8 @@ class CacheDownloader {
   int get filePosition => _sink.flushedBytes;
   Uri get sourceUrl => _downloader.sourceUrl;
   bool get isClosed => _completer.isCompleted;
+
+  ///If [cancel] stopped the download for an invalid cache.
+  bool get isInvalidated => _invalidCache != null;
   bool get isPaused => _paused;
 }
