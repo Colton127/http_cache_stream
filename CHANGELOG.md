@@ -1,3 +1,9 @@
+## Unreleased
+
+### Fixes
+
+* Fixed a partial cache file deleted mid-download (by the device's cache management, say) failing every request for what it held until the download ended: the download wrote on into the deleted file. A request now resets the cache, and waits for its range to download again.
+
 ## 0.3.1
 
 ### Fixes
