@@ -118,6 +118,20 @@ class HttpCacheStream {
       }
     }
 
+    //Deleted while it downloads (by the device's cache management, say), the
+    //partial cache file takes the download's writes into a file no response can
+    //open, until the download ends. Reset, the download starts again, and the
+    //request waits for its range.
+    final activeDownloader = _cacheDownloader;
+    final cacheDeleted = activeDownloader != null &&
+        !activeDownloader.isClosed &&
+        activeDownloader.filePosition > 0 &&
+        !await files.activeCacheFile().exists();
+    if (cacheDeleted) {
+      await _resetCache(InvalidCacheSizeException(
+          sourceUrl, -1, responseHeaders?.sourceLength ?? 0));
+    }
+
     final rangeThreshold = config.rangeRequestSplitThreshold;
     if (rangeThreshold != null &&
         range.start >= rangeThreshold &&
@@ -132,7 +146,9 @@ class HttpCacheStream {
     final streamRequest = StreamRequest.construct(range);
     final downloader = _cacheDownloader;
 
-    if (downloader != null && downloader.processRequest(streamRequest)) {
+    if (!cacheDeleted &&
+        downloader != null &&
+        downloader.processRequest(streamRequest)) {
       return streamRequest.response; //Request was processed immediately
     } else {
       _queuedRequests
