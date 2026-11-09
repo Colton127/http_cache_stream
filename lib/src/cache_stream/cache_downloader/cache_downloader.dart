@@ -101,14 +101,10 @@ class CacheDownloader {
                 (_) {
                   _downloader.resume();
                 },
-                onError: (e) {
-                  cancel(e);
-                },
+                onError: _cancelOnFlushError,
               );
             } else if (!_sink.isFlushing) {
-              _sink.flush().catchError((e) {
-                cancel(e);
-              });
+              _sink.flush().catchError(_cancelOnFlushError);
             }
           },
         );
@@ -149,6 +145,14 @@ class CacheDownloader {
         _completer.complete();
       }
     }
+  }
+
+  ///Cancels the download on a failed save. A partial cache file that does not end where the download
+  ///resumes it (deleted, truncated or written to since) is an invalid cache: the download starts over.
+  void _cancelOnFlushError(final Object e) {
+    cancel(e is SinkFileLengthException
+        ? InvalidCacheSizeException(sourceUrl, e.length, e.expected)
+        : e);
   }
 
   /// Cancels the download and closes the stream. An optional [error] can be provided to indicate the reason for cancellation.

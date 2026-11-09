@@ -47,6 +47,24 @@ void main() {
     return sizes;
   }
 
+  /// Leaves a partial cache of [source]'s first [bytes], as an interrupted
+  /// download does.
+  Future<void> interruptAt(Uri source, int bytes) async {
+    final gate = Completer<void>();
+    h.origin
+      ..responseBodyGate = gate
+      ..responseBodyGateAfterBytes = bytes;
+    final stream = h.manager.createStream(source);
+    stream.download().ignore();
+    await _until(() => stream.cachePosition >= bytes);
+    await stream.dispose(force: true);
+    h.origin
+      ..responseBodyGate = null
+      ..responseBodyGateAfterBytes = null;
+    gate.complete();
+    expect(stream.files.partial.lengthSyncOrNull(), bytes);
+  }
+
   test(
       'a range it had downloaded is read again after the partial file was '
       'deleted', () async {
@@ -74,6 +92,47 @@ void main() {
     final file = await download.timeout(const Duration(seconds: 15));
     expect(Payload.hash(await file.readAsBytes()), h.payloadHash);
     await stream.dispose(force: true);
+  });
+
+  test(
+      'a resumed download whose partial file was deleted before it wrote '
+      'saves no bytes at the wrong offset', () async {
+    final source = h.origin.url('/resume-deleted.mp3');
+    final half = h.origin.payload.length ~/ 2;
+    final quarter = h.origin.payload.length ~/ 4;
+    await interruptAt(source, half);
+
+    // The resumed download waits for the origin while its partial file is
+    // deleted, then saves a quarter and stops, before any request or refresh
+    // could see the file change.
+    final startGate = Completer<void>();
+    final bodyGate = Completer<void>();
+    h.origin
+      ..responseStartGate = startGate
+      ..responseBodyGate = bodyGate
+      ..responseBodyGateAfterBytes = quarter;
+    final requestsBefore = h.origin.requestCount;
+    final resumed = h.manager.createStream(source);
+    final invalidSizes = listenForInvalidSizes(resumed);
+    resumed.download().ignore();
+    await _until(() => h.origin.requestCount > requestsBefore);
+    await resumed.files.partial.delete();
+    startGate.complete();
+    await _until(
+        () => (resumed.files.partial.lengthSyncOrNull() ?? 0) >= quarter);
+    await resumed.dispose(force: true);
+    expect(invalidSizes, contains(0), reason: 'the deletion is reported');
+    h.origin
+      ..responseStartGate = null
+      ..responseBodyGate = null
+      ..responseBodyGateAfterBytes = null;
+    bodyGate.complete();
+
+    // What it saved is resumed from, and must be the content's start.
+    final next = h.manager.createStream(source);
+    final file = await next.download().timeout(const Duration(seconds: 15));
+    expect(Payload.hash(await file.readAsBytes()), h.payloadHash);
+    await next.dispose(force: true);
   });
 
   test('a complete cache file of the wrong size is downloaded again', () async {
