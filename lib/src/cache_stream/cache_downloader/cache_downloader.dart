@@ -28,8 +28,12 @@ class CacheDownloader {
   ///Headers received and validated
   CachedResponseHeaders? _validatedHeaders;
 
-  ///The invalid cache [cancel] stopped the download for, if any. The download ends on it, and serves no more requests.
+  ///The invalid cache the download stopped for, if any: [cancel]led for it, or found by a save. The download
+  ///ends on it, and serves no more requests.
   InvalidCacheException? _invalidCache;
+
+  ///If the download may still write to the partial cache file, until its sink is closed.
+  bool _writing = true;
   CacheDownloader._(
     final CacheMetadata cacheMetadata,
     final int startPosition,
@@ -108,12 +112,8 @@ class CacheDownloader {
             }
           },
         );
-        //Cancelled for an invalid cache between responses (waiting for one, or to retry), the download
-        //returns as if stopped; it ends on the exception, as when a response is cancelled for it.
-        if (_invalidCache case final InvalidCacheException invalidCache) {
-          throw invalidCache;
-        }
-      } on InvalidCacheException {
+      } on InvalidCacheException catch (e) {
+        _invalidCache ??= e;
         _validatedHeaders = null;
         rethrow;
       } catch (e) {
@@ -123,12 +123,28 @@ class CacheDownloader {
       // Post-download — flush remaining data and verify cache integrity
       try {
         await _sink.close(
-          flushBuffer: true,
+          flushBuffer: !isInvalidated, //An invalid cache keeps no more bytes
           isDone: _downloader
               .isDone, //If the source did not end, the feed is marked as aborted so readers do not treat it as an end of stream
         ); //Flushes all buffered data and closes the sink
       } catch (e) {
-        onError(e);
+        final error = _saveError(e);
+        if (error is InvalidCacheException) {
+          _invalidCache ??= error;
+        } else {
+          onError(error);
+        }
+      } finally {
+        _writing = false;
+      }
+
+      //Cancelled for an invalid cache between responses (waiting for one, or
+      //to retry) or while saving its last bytes, or found invalid by a save that
+      //failed after the response ended: the download returned as if stopped,
+      //and ends on it, as when a response is cancelled for it.
+      if (_invalidCache case final InvalidCacheException invalidCache) {
+        _validatedHeaders = null;
+        throw invalidCache;
       }
 
       final sourceLength = _validatedHeaders?.sourceLength ??
@@ -141,19 +157,24 @@ class CacheDownloader {
         ///The sink is not closed on invalid cache exception, so we need to close it here
         await _sink.close(flushBuffer: false).ignoreResult();
       }
+      _writing = false;
       if (!_completer.isCompleted) {
         _completer.complete();
       }
     }
   }
 
-  ///Cancels the download on a failed save. A partial cache file that does not end where the download
-  ///resumes it (deleted, truncated or written to since) is an invalid cache: the download starts over.
+  ///Cancels the download on a failed save.
   void _cancelOnFlushError(final Object e) {
-    cancel(e is SinkFileLengthException
-        ? InvalidCacheSizeException(sourceUrl, e.length, e.expected)
-        : e);
+    //A block body: a flush future's error handler must return null.
+    cancel(_saveError(e));
   }
+
+  ///A partial cache file that does not end where the download resumes it (deleted, truncated or written
+  ///to since) is an invalid cache: the download starts over.
+  Object _saveError(final Object e) => e is SinkFileLengthException
+      ? InvalidCacheSizeException(sourceUrl, e.length, e.expected)
+      : e;
 
   /// Cancels the download and closes the stream. An optional [error] can be provided to indicate the reason for cancellation.
   /// An [InvalidCacheException] ends [download] on it, and the download serves no more requests.
@@ -209,12 +230,13 @@ class CacheDownloader {
   int get downloadPosition => _position;
   int get filePosition => _sink.flushedBytes;
 
-  ///If the download may still write to the partial cache file.
-  bool get isWriting => !_sink.isClosed;
+  ///If the download may still write to the partial cache file: until its sink is closed, and the file
+  ///released.
+  bool get isWriting => _writing;
   Uri get sourceUrl => _downloader.sourceUrl;
   bool get isClosed => _completer.isCompleted;
 
-  ///If [cancel] stopped the download for an invalid cache.
+  ///If the download stopped for an invalid cache: [cancel]led for it, or found by a save.
   bool get isInvalidated => _invalidCache != null;
   bool get isPaused => _paused;
 }

@@ -455,6 +455,7 @@ class HttpCacheStream {
     assert(_fileLock.locked,
         '_cacheFileState must be called within _fileLock.synchronized()');
     final downloader = _activeDownloader;
+    final writer = downloader?.isWriting == true ? downloader : null;
     //Read before the file is: by then the file holds at least these bytes, while
     //bytes saved during the stat may be missing from its size.
     final savedBytes = downloader?.filePosition ?? 0;
@@ -467,7 +468,7 @@ class HttpCacheStream {
             sourceUrl, completeCacheStat.size, sourceLength);
         return CacheState.complete(completeCacheStat.size);
       }
-    } else if (downloader == null) {
+    } else if (writer == null) {
       return const CacheState.zero(); //Nothing to resume without the length
     }
 
@@ -489,7 +490,7 @@ class HttpCacheStream {
           partial: true);
 
       //Renamed once the download stops writing to it
-      if (partialSize == sourceLength && downloader?.isWriting != true) {
+      if (partialSize == sourceLength && writer == null) {
         try {
           await files.partial.rename(files
               .complete.path); //Rename the partial cache to the complete cache
@@ -511,13 +512,13 @@ class HttpCacheStream {
       }
     }
 
-    if (downloader != null) {
+    if (writer != null) {
       //The download is ahead of the file by the bytes it has yet to save. A
       //partial cache file it did not resume holds none of its bytes until it
       //saves them.
       return CacheState.incomplete(
-          downloader.downloadPosition, sourceLength ?? downloader.sourceLength,
-          filePosition: downloader.filePosition);
+          writer.downloadPosition, sourceLength ?? writer.sourceLength,
+          filePosition: writer.filePosition);
     }
     return CacheState.incomplete(partialSize ?? 0, sourceLength);
   }

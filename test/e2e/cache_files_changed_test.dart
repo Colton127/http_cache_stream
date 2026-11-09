@@ -173,6 +173,34 @@ void main() {
     await stream.dispose(force: true);
   });
 
+  test(
+      'a resumed download whose partial file was deleted, receiving the rest '
+      'at once, starts over', () async {
+    final source = h.origin.url('/resume-rest.mp3');
+    final saved = h.origin.payload.length - 1000;
+    await interruptAt(source, saved);
+
+    // The rest arrives before the download's first save finds the file gone.
+    final startGate = Completer<void>();
+    h.origin.responseStartGate = startGate;
+    final requestsBefore = h.origin.requestCount;
+    final resumed = h.manager.createStream(source);
+    final errors = listenForErrors(resumed);
+    final download = resumed.download();
+    await _until(() => h.origin.requestCount > requestsBefore);
+    await resumed.files.partial.delete();
+    h.origin.responseStartGate = null;
+    startGate.complete();
+
+    final file = await download.timeout(const Duration(seconds: 15));
+    expect(Payload.hash(await file.readAsBytes()), h.payloadHash);
+    expect(invalidSizes(errors), [0], reason: 'the deletion is reported');
+    expect(
+        errors.whereType<InvalidCacheSizeException>(), hasLength(errors.length),
+        reason: 'as an invalid cache, which resets, not a failed save');
+    await resumed.dispose(force: true);
+  });
+
   test('a complete cache file of the wrong size is downloaded again', () async {
     final stream = h.manager.createStream(h.origin.url('/truncated.mp3'));
     final errors = listenForErrors(stream);
