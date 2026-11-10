@@ -1,14 +1,14 @@
-## Unreleased
+## 0.3.2
 
 ### New Features
 
-* Added `CacheState.filePosition`, the bytes saved in the cache file. While a download runs it can be behind `position`, which counts the bytes downloaded. `CacheState.incomplete` takes it as an optional `filePosition`, which defaults to `position`.
+* Added `CacheState.filePosition`, the bytes saved in the cache file. While a download runs it can be behind `position`, which counts the bytes downloaded. `CacheState.incomplete` takes it as an optional `filePosition`, which defaults to `position`, and incomplete states compare by it too.
 
 ### Fixes
 
 * Every request now revalidates the cache files against the running download, and resets a cache they no longer hold (deleted or changed underneath, by the device's cache management, say). The request waits for its range to download again.
 * Fixed a partial cache file deleted mid-download failing every request for what it held until the download ended: the download wrote on into the deleted file.
-* Fixed a resumed download whose partial cache file was deleted, truncated or written to before the download first saved saving its bytes at the wrong offset, which could leave a complete cache file of the right size with the wrong content. The download now starts over.
+* Fixed a resumed download saving its bytes at the wrong offset when its partial cache file was deleted, truncated or written to before the download first wrote to it, which could leave a complete cache file of the right size with the wrong content. The download now starts over.
 * Fixed `resetCache()`, and the reset of an invalid cache, being ignored while the download waited for a response or to retry: it resumed the old partial cache.
 * Fixed `refreshCacheState()` during a download of unknown length (a chunked response) dropping the position to 0. While a download runs, the state takes its position.
 
