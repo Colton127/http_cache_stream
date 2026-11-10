@@ -71,6 +71,33 @@ void main() {
     expect(Payload.hash(written), Payload.hash(expected));
   });
 
+  test('resuming a file that does not end where the sink resumes it fails',
+      () async {
+    final saved = Payload.generate(50 * 1024, seed: 1);
+    for (final changed in <Uint8List?>[
+      null, // deleted
+      Uint8List.sublistView(saved, 0, 1024), // truncated
+      Uint8List.fromList([...saved, 1, 2, 3]), // written to
+    ]) {
+      final file = tmp('changed.bin');
+      if (changed != null) await file.writeAsBytes(changed);
+      if (changed == null && file.existsSync()) await file.delete();
+
+      final sink = BufferedIOSink(file, saved.length);
+      sink.add(Payload.generate(1024, seed: 2));
+      await expectLater(
+        sink.flush(),
+        throwsA(isA<SinkFileLengthException>()
+            .having((e) => e.length, 'length', changed?.length ?? 0)
+            .having((e) => e.expected, 'expected', saved.length)),
+      );
+      expect(sink.flushedBytes, saved.length);
+      expect(await file.length(), changed?.length ?? 0,
+          reason: 'nothing is written to it');
+      await sink.close().catchError((_) {});
+    }
+  });
+
   test('waitForPosition completes once the target is flushed', () async {
     final data = Payload.generate(10 * 1024);
     final sink = BufferedIOSink(tmp('wait.bin'), 0);

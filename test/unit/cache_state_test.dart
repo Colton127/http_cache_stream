@@ -6,6 +6,7 @@ void main() {
     test('has no position, length or progress', () {
       const s = CacheState.zero();
       expect(s.position, 0);
+      expect(s.filePosition, 0);
       expect(s.sourceLength, isNull);
       expect(s.isComplete, isFalse);
       expect(s.progress, isNull);
@@ -34,6 +35,15 @@ void main() {
       expect(s.remainingBytes, isNull);
     });
 
+    test('every byte is saved unless a file position is given', () {
+      expect(const CacheState.incomplete(50, 100).filePosition, 50);
+      const s = CacheState.incomplete(50, 100, filePosition: 30);
+      expect(s.position, 50);
+      expect(s.filePosition, 30);
+      expect(s.progress, closeTo(0.5, 1e-9),
+          reason: 'progress follows the downloaded position');
+    });
+
     test('zero source length means null progress', () {
       const s = CacheState.incomplete(0, 0);
       expect(s.progress, isNull);
@@ -46,16 +56,21 @@ void main() {
       expect(s.isComplete, isTrue);
       expect(s.progress, 1.0);
       expect(s.position, 100);
+      expect(s.filePosition, 100);
       expect(s.remainingBytes, 0);
     });
   });
 
   group('equality', () {
-    test('incomplete states compare by position and length', () {
+    test('incomplete states compare by positions and length', () {
       expect(const CacheState.incomplete(10, 100),
           const CacheState.incomplete(10, 100));
       expect(const CacheState.incomplete(10, 100),
           isNot(const CacheState.incomplete(20, 100)));
+      expect(const CacheState.incomplete(10, 100),
+          const CacheState.incomplete(10, 100, filePosition: 10));
+      expect(const CacheState.incomplete(10, 100),
+          isNot(const CacheState.incomplete(10, 100, filePosition: 5)));
     });
 
     test('complete states compare by source length', () {

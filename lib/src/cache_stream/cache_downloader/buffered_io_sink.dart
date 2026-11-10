@@ -7,6 +7,24 @@ import '../response_streams/partial_cache_feed.dart';
 
 part 'buffered_io_sink_feed.dart';
 
+/// Thrown when the file a [BufferedIOSink] resumes does not end where the sink resumes it: it was deleted,
+/// truncated or written to since the sink's earlier bytes were saved.
+class SinkFileLengthException implements Exception {
+  final String path;
+
+  /// The length of the file.
+  final int length;
+
+  /// Where the sink resumes the file.
+  final int expected;
+
+  const SinkFileLengthException(this.path, this.length, this.expected);
+
+  @override
+  String toString() =>
+      'SinkFileLengthException: $path is $length bytes long, but the sink resumes it at $expected';
+}
+
 /// An IO sink that supports adding data while flushing to disk asynchronously.
 class BufferedIOSink {
   //Maximum number of bytes to write in a single write operation. This prevents long writes from stalling position waiters.
@@ -50,7 +68,18 @@ class BufferedIOSink {
             fileMode = FileMode.write; //Overwrite existing
           }
 
-          raf = _openedRAF = await file.open(mode: fileMode);
+          raf = await file.open(mode: fileMode);
+          if (fileMode == FileMode.append) {
+            //Appended at its end, the file must end where the sink resumes it.
+            //Deleted since (append creates it again), truncated or written to,
+            //it would take the sink's bytes at the wrong offset.
+            final length = await raf.length();
+            if (length != flushedBytes) {
+              await raf.close();
+              throw SinkFileLengthException(file.path, length, flushedBytes);
+            }
+          }
+          _openedRAF = raf;
         }
 
         while (_buffer.isNotEmpty) {

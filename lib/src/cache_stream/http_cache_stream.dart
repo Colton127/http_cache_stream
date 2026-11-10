@@ -108,34 +108,22 @@ class HttpCacheStream {
     await _ensureInit();
     _checkDisposed();
 
+    //Revalidated for every request: cache files deleted or changed underneath
+    //(by the device's cache management, say) reset the cache here, and the
+    //request waits for its range to download again, rather than its response
+    //failing to read them.
+    final state = await refreshCacheState();
     final responseHeaders = _cachedResponseHeaders;
     final range = IntRange.validate(start, end, responseHeaders?.sourceLength);
 
-    if (responseHeaders != null && cacheState.isComplete) {
-      final verifiedCacheState = await refreshCacheState();
-      if (verifiedCacheState.isComplete) {
-        return FileStreamResponse(range, files, responseHeaders);
-      }
-    }
-
-    //Deleted while it downloads (by the device's cache management, say), the
-    //partial cache file takes the download's writes into a file no response can
-    //open, until the download ends. Reset, the download starts again, and the
-    //request waits for its range.
-    final activeDownloader = _cacheDownloader;
-    final cacheDeleted = activeDownloader != null &&
-        !activeDownloader.isClosed &&
-        activeDownloader.filePosition > 0 &&
-        !await files.activeCacheFile().exists();
-    if (cacheDeleted) {
-      await _resetCache(InvalidCacheSizeException(
-          sourceUrl, -1, responseHeaders?.sourceLength ?? 0));
+    if (responseHeaders != null && state.isComplete) {
+      return FileStreamResponse(range, files, responseHeaders);
     }
 
     final rangeThreshold = config.rangeRequestSplitThreshold;
     if (rangeThreshold != null &&
         range.start >= rangeThreshold &&
-        (range.start - cachePosition) >= rangeThreshold) {
+        (range.start - state.position) >= rangeThreshold) {
       return RangeDownloadStreamResponse.construct(sourceUrl, range, config);
     }
 
@@ -146,9 +134,7 @@ class HttpCacheStream {
     final streamRequest = StreamRequest.construct(range);
     final downloader = _cacheDownloader;
 
-    if (!cacheDeleted &&
-        downloader != null &&
-        downloader.processRequest(streamRequest)) {
+    if (downloader != null && downloader.processRequest(streamRequest)) {
       return streamRequest.response; //Request was processed immediately
     } else {
       _queuedRequests
@@ -250,8 +236,9 @@ class HttpCacheStream {
           await downloader.download(
             onPosition: (position) {
               endError = null; //It moved on, past any error before
-              _updateCacheState(
-                  CacheState.incomplete(position, downloader.sourceLength));
+              _updateCacheState(CacheState.incomplete(
+                  position, downloader.sourceLength,
+                  filePosition: downloader.filePosition));
               while (_queuedRequests.isNotEmpty &&
                   downloader.processRequest(_queuedRequests.first)) {
                 _queuedRequests.removeAt(0);
@@ -390,28 +377,32 @@ class HttpCacheStream {
   Future<void> _resetCache(final InvalidCacheException exception) {
     final downloader = _cacheDownloader;
     if (downloader != null && !downloader.isClosed) {
-      return downloader.cancel(
-          exception); //Close the ongoing download, which will rethrow the exception and reset the cache
-    } else {
-      return _fileLock.synchronized(() async {
-        try {
-          _cachedResponseHeaders = null;
-          _updateCacheState(const CacheState.zero());
-          if (exception is! CacheResetException) {
-            _addError(exception, closeRequests: false);
-          }
-          await files.delete(partialOnly: false);
-        } catch (e) {
-          _addError(e, closeRequests: false);
-        } finally {
-          if (_queuedRequests.isNotEmpty && !isDownloading && isRetained) {
-            //Restart download to fulfill pending requests
-            Timer.run(() => download()
-                .ignore()); //Use Timer.run to avoid calling download() within the lock
-          }
-        }
-      });
+      //The download serves no more requests from the cache
+      final cancelled = downloader.cancel(exception);
+      if (downloader.isWriting) {
+        return cancelled; //It ends on the exception, and resets the cache
+      }
+      //It stopped writing, and completes (refreshing the cache state on the
+      //way, which may be what is resetting it): reset here, without waiting.
     }
+    return _fileLock.synchronized(() async {
+      try {
+        _cachedResponseHeaders = null;
+        _updateCacheState(const CacheState.zero());
+        if (exception is! CacheResetException) {
+          _addError(exception, closeRequests: false);
+        }
+        await files.delete(partialOnly: false);
+      } catch (e) {
+        _addError(e, closeRequests: false);
+      } finally {
+        if (_queuedRequests.isNotEmpty && !isDownloading && isRetained) {
+          //Restart download to fulfill pending requests
+          Timer.run(() => download()
+              .ignore()); //Use Timer.run to avoid calling download() within the lock
+        }
+      }
+    });
   }
 
   Future<void> _setCachedResponseHeaders(CachedResponseHeaders headers) {
@@ -430,84 +421,106 @@ class HttpCacheStream {
     });
   }
 
+  /// Reads the cache state from the cache files, checked against the running download, if any, and emits it.
+  ///
+  /// Resets the cache when its files no longer hold what it recorded (see [InvalidCacheException]), and returns
+  /// [CacheState.zero].
   Future<CacheState> refreshCacheState() async {
-    final state = await _fileLock.synchronized(_cacheFileState);
-    _updateCacheState(state);
-    return state;
+    try {
+      final state = await _fileLock.synchronized(() async {
+        try {
+          return await _cacheFileState();
+        } on InvalidCacheException catch (e) {
+          //Cancelled before the lock is released: a refresh waiting for it
+          //does not judge the download again (and reset its successor), and no
+          //request is served from it.
+          _activeDownloader?.cancel(e).ignore();
+          rethrow;
+        }
+      });
+      _updateCacheState(state);
+      return state;
+    } on InvalidCacheException catch (e) {
+      await _resetCache(e);
+      return const CacheState.zero();
+    }
   }
 
+  /// The cache state the cache files hold, checked against the running download, if any.
+  ///
+  /// Throws an [InvalidCacheSizeException] when the files no longer hold what the cache recorded: a complete
+  /// cache file of the wrong size, a partial one longer than the source, or a partial one missing bytes the
+  /// download saved to it.
   Future<CacheState> _cacheFileState() async {
     assert(_fileLock.locked,
-        'fileCacheState must be called within _fileLock.synchronized()');
+        '_cacheFileState must be called within _fileLock.synchronized()');
+    final downloader = _activeDownloader;
+    final writer = downloader?.isWriting == true ? downloader : null;
+    //Read before the file is: by then the file holds at least these bytes, while
+    //bytes saved during the stat may be missing from its size.
+    final savedBytes = downloader?.filePosition ?? 0;
     final sourceLength = _cachedResponseHeaders?.sourceLength;
-    if (sourceLength == null) return const CacheState.zero();
 
-    InvalidCacheException? cacheException;
-
-    try {
+    if (sourceLength != null) {
       final completeCacheStat = await files.complete.stat();
       if (completeCacheStat.type == FileSystemEntityType.file) {
         InvalidCacheSizeException.validate(
             sourceUrl, completeCacheStat.size, sourceLength);
         return CacheState.complete(completeCacheStat.size);
       }
-    } catch (e) {
-      if (e is InvalidCacheException) {
-        await files.complete.delete().ignoreResult();
-        cacheException = e;
-      }
-      _addError(e, closeRequests: false);
+    } else if (writer == null) {
+      return const CacheState.zero(); //Nothing to resume without the length
     }
 
-    try {
-      final partialCacheStat = await files.partial.stat();
+    final partialCacheStat = await files.partial.stat();
+    final partialSize = partialCacheStat.type == FileSystemEntityType.file
+        ? partialCacheStat.size
+        : null;
 
-      if (partialCacheStat.type == FileSystemEntityType.file) {
-        InvalidCacheSizeException.validate(
-            sourceUrl, partialCacheStat.size, sourceLength,
-            partial: true);
+    //Deleted or truncated while the download writes into it (by the device's
+    //cache management, say), the partial cache file lost bytes the download
+    //saved: no response can read them, and the download saves on into a file
+    //that no longer holds them (a deleted one, or at the wrong offset).
+    if (savedBytes > (partialSize ?? 0)) {
+      throw InvalidCacheSizeException(sourceUrl, partialSize ?? -1, savedBytes);
+    }
 
-        if (partialCacheStat.size == sourceLength) {
-          try {
-            await files.partial.rename(files.complete
-                .path); //Rename the partial cache to the complete cache
-            return CacheState.complete(partialCacheStat.size);
-          } on FileSystemException catch (e) {
-            final completeCacheStat = await files.complete.stat();
-            if (completeCacheStat.type == FileSystemEntityType.file &&
-                completeCacheStat.size == sourceLength) {
-              return CacheState.complete(completeCacheStat
-                  .size); //Renamed by another process, treat as complete.
-            }
-            //Rename can fail if the file is open by a response stream on Windows.
-            if (lastErrorOrNull is! FileSystemException) {
-              _addError(e,
-                  closeRequests:
-                      false); //Prevent spamming the error log with repeated rename failures
-            }
+    if (partialSize != null && sourceLength != null) {
+      InvalidCacheSizeException.validate(sourceUrl, partialSize, sourceLength,
+          partial: true);
+
+      //Renamed once the download stops writing to it
+      if (partialSize == sourceLength && writer == null) {
+        try {
+          await files.partial.rename(files
+              .complete.path); //Rename the partial cache to the complete cache
+          return CacheState.complete(partialSize);
+        } on FileSystemException catch (e) {
+          final completeCacheStat = await files.complete.stat();
+          if (completeCacheStat.type == FileSystemEntityType.file &&
+              completeCacheStat.size == sourceLength) {
+            return CacheState.complete(completeCacheStat
+                .size); //Renamed by another process, treat as complete.
+          }
+          //Rename can fail if the file is open by a response stream on Windows.
+          if (lastErrorOrNull is! FileSystemException) {
+            _addError(e,
+                closeRequests:
+                    false); //Prevent spamming the error log with repeated rename failures
           }
         }
-
-        return CacheState.incomplete(partialCacheStat.size, sourceLength);
       }
-    } catch (e) {
-      if (e is InvalidCacheException) {
-        cacheException = e;
-      }
-      _addError(e, closeRequests: false);
     }
 
-    if (cacheException != null && _cacheDownloader?.isClosed != false) {
-      _cachedResponseHeaders =
-          null; //Reset cached headers if the cache is invalid
-      await files.delete(partialOnly: false).ignoreResult();
-      if (_queuedRequests.isNotEmpty && !isDownloading && isRetained) {
-        Timer.run(() => download().ignore());
-      }
-      return const CacheState.zero();
+    if (writer != null) {
+      //The download is ahead of the file by the bytes it has yet to save. A
+      //partial cache file it did not resume holds none of its bytes until it
+      //saves them.
+      return CacheState.incomplete(
+          writer.downloadPosition, sourceLength ?? writer.sourceLength,
+          filePosition: writer.filePosition);
     }
-
-    return CacheState.incomplete(0, sourceLength);
+    return CacheState.incomplete(partialSize ?? 0, sourceLength);
   }
 
   void _updateCacheState(final CacheState cacheState) {
@@ -571,7 +584,13 @@ class HttpCacheStream {
   /// Bytes currently available in the cache (downloaded or on disk).
   /// For an active download, this may be ahead of the current read position. For a completed cache, this will match [sourceLength].
   int get cachePosition =>
-      _cacheDownloader?.downloadPosition ?? cacheState.position;
+      _activeDownloader?.downloadPosition ?? cacheState.position;
+
+  ///The download filling the cache, unless it was cancelled for an invalid cache.
+  CacheDownloader? get _activeDownloader {
+    final downloader = _cacheDownloader;
+    return downloader == null || downloader.isInvalidated ? null : downloader;
+  }
 
   /// If this [HttpCacheStream] is retained.
   ///
